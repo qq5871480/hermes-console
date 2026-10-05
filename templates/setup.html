@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}首次设置{% endblock %}
+{% block body %}
+<div style="max-width:440px;margin:60px auto">
+<div class="card">
+<h2>欢迎使用 Hermes Console</h2>
+<p style="color:var(--mut);font-size:13.5px;margin-bottom:14px">首次访问：请创建管理员密码。此页面创建完成后自动关闭（管理员已存在时无法再次访问）。</p>
+<form method="post">
+<p>新密码（至少8位）<input name="new1" type="password" required minlength="8" autofocus></p>
+<p>确认密码<input name="new2" type="password" required minlength="8"></p>
+<p><button class="btn" style="width:100%">创建并登录</button></p>
+</form>
+<p style="color:var(--mut);font-size:12px;margin-top:10px">⚠️ 本控制台可修改配置、重启服务、还原备份，等同实例管理权限。若部署在公网，请务必使用强密码并考虑加 TLS。</p>
+</div>
+</div>
+{% endblock %}

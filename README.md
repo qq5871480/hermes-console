@@ -34,16 +34,22 @@ export HERMES_HOME=~/.hermes
 ./venv/bin/gunicorn -w 2 --timeout 300 -b 0.0.0.0:8787 app:app
 ```
 
-On first start the console creates an `admin` user. If you did not set `CONSOLE_INIT_PASSWORD`, a random initial password is printed to the startup log / journal — grab it there. You are forced to change it on first login.
+### First launch — set your own password
 
-Open `http://server-ip:8787`, log in as `admin`.
+**There is no default password.** The first time you open the console in a browser you are taken to a setup page where you create the admin password (min 8 chars). That page closes itself once the admin account exists.
+
+Open `http://server-ip:8787` → create your password → you're in.
+
+> ⚠️ If the console is reachable from the public internet, set your password **immediately** after starting it — whoever reaches the setup page first becomes the admin. Prefer firewall restrictions or TLS reverse proxy (see Security notes).
+
+*(Legacy: setting the `CONSOLE_INIT_PASSWORD` env var still pre-creates the admin user with that password and forces a change on first login.)*
 
 ## Configuration (env vars, all optional)
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `HERMES_HOME` | `~/.hermes` | Hermes instance directory to manage |
-| `CONSOLE_INIT_PASSWORD` | random | Initial admin password (first init only) |
+| `CONSOLE_INIT_PASSWORD` | none (first-launch setup page) | Optional: pre-create admin with this password instead |
 | `CONSOLE_DB` | `./console.db` | Console's own SQLite database |
 | `CONSOLE_BACKUP_DIR` | `~/hermes-console-backups` | Where backups are stored |
 | `CONSOLE_GATEWAY_SERVICE` | `hermes-gateway` | `systemctl --user` service name |

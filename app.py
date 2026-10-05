@@ -27,21 +27,10 @@ HERMES_HOME = Path(os.environ.get('HERMES_HOME', str(Path.home() / '.hermes')))
 BACKUP_DIR = Path(os.environ.get('CONSOLE_BACKUP_DIR', str(Path.home() / 'hermes-console-backups')))
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get('CONSOLE_DB', str(APP_DIR / 'console.db')))
+# 首次访问设置模式：不设任何默认密码。
+# 第一次打开网页即引导创建管理员密码（见 /setup）。
+# 兼容保留：如显式设置 CONSOLE_INIT_PASSWORD 环境变量，仍按其初始化admin（须首登改密）。
 INIT_PASSWORD = os.environ.get('CONSOLE_INIT_PASSWORD', '')
-if not INIT_PASSWORD:
-    # 未指定时随机生成一次并落盘（600权限），保证多worker共用同一个初始密码
-    _pwf = Path(os.environ.get('CONSOLE_DB', str(APP_DIR / 'console.db'))).with_suffix('.initpw')
-    try:
-        if _pwf.exists():
-            INIT_PASSWORD = _pwf.read_text(encoding='utf-8').strip()
-        if not INIT_PASSWORD:
-            INIT_PASSWORD = 'hc-' + secrets.token_hex(8)
-            _pwf.write_text(INIT_PASSWORD, encoding='utf-8')
-            os.chmod(_pwf, 0o600)
-        print(f'[hermes-console] 初始密码（首次登录用，登录后强制修改）: {INIT_PASSWORD}')
-    except Exception:
-        INIT_PASSWORD = 'hc-' + secrets.token_hex(8)
-        print(f'[hermes-console] 初始密码（首次登录用，登录后强制修改）: {INIT_PASSWORD}')
 
 def _resolve_hermes_bin():
     env = os.environ.get('HERMES_BIN')
@@ -135,10 +124,14 @@ def init_db():
             id INTEGER PRIMARY KEY, username TEXT UNIQUE, pw_hash TEXT,
             salt TEXT, must_change INTEGER DEFAULT 1,
             login_fails INTEGER DEFAULT 0, locked_until REAL DEFAULT 0)''')
-        if not conn.execute('SELECT id FROM users WHERE username="admin"').fetchone():
+        if INIT_PASSWORD and not conn.execute('SELECT id FROM users WHERE username="admin"').fetchone():
             salt = secrets.token_hex(16)
             conn.execute('INSERT OR IGNORE INTO users(username,pw_hash,salt,must_change) VALUES(?,?,?,1)',
                          ('admin', hashlib.pbkdf2_hmac('sha256', INIT_PASSWORD.encode(), salt.encode(), 200000).hex(), salt))
+
+def admin_exists():
+    with db() as conn:
+        return conn.execute('SELECT id FROM users WHERE username="admin"').fetchone() is not None
 
 def verify_pw(username, password):
     with db() as conn:
@@ -267,8 +260,34 @@ def mask(s, keep=4):
     return s[:keep] + '•' * max(len(s) - keep, 4) if len(s) > keep else '•' * 8
 
 # ---------- 路由：认证 ----------
+@app.route('/setup', methods=['GET', 'POST'])
+def setup_admin():
+    """首次访问：创建管理员密码。仅在库里没有admin时开放。"""
+    if admin_exists():
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        p1 = request.form.get('new1', '')
+        p2 = request.form.get('new2', '')
+        if len(p1) < 8:
+            flash('密码至少8位', 'err')
+        elif p1 != p2:
+            flash('两次输入的密码不一致', 'err')
+        else:
+            salt = secrets.token_hex(16)
+            with db() as conn:
+                if not admin_exists():
+                    conn.execute('INSERT OR IGNORE INTO users(username,pw_hash,salt,must_change) VALUES(?,?,?,0)',
+                                 ('admin', hashlib.pbkdf2_hmac('sha256', p1.encode(), salt.encode(), 200000).hex(), salt))
+            session['user'] = 'admin'
+            session['must_change'] = False
+            flash('管理员创建成功，已自动登录', 'ok')
+            return redirect(url_for('dashboard'))
+    return render_template('setup.html')
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if not admin_exists():
+        return redirect(url_for('setup_admin'))
     if request.method == 'POST':
         u = verify_pw(request.form.get('username', 'admin'), request.form.get('password', ''))
         if u:
@@ -294,7 +313,7 @@ def change_password():
             flash('新密码至少8位', 'err')
         elif new1 != new2:
             flash('两次新密码不一致', 'err')
-        elif new1 == INIT_PASSWORD:
+        elif INIT_PASSWORD and new1 == INIT_PASSWORD:
             flash('新密码不能与初始密码相同', 'err')
         else:
             set_pw(session['user'], new1)

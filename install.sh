@@ -70,9 +70,8 @@ export CONSOLE_GATEWAY_SERVICE="${CONSOLE_GATEWAY_SERVICE:-hermes-gateway}"
 
 echo "==> 启动控制台（端口 $PORT）…"
 echo "    访问：http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '服务器IP'):$PORT"
-echo "    用户名：admin"
-echo "    初始密码：见下方启动日志第一行 [hermes-console] initial ..."
-echo "    （首次登录会强制修改密码）"
+echo "    首次打开网页即进入「创建管理员密码」页面——没有默认密码，谁先访问谁设置，"
+echo "    请立即在浏览器中完成设置（公网环境尤其要第一时间设置！）"
 echo "    生产部署/开机自启请参考仓库 README 的 systemd 部分。"
 echo
 exec ./venv/bin/gunicorn -w 2 --timeout 300 -b "0.0.0.0:$PORT" app:app
