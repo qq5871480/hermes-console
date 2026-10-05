@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Hermes Console 一键安装脚本
+# 用法：bash install.sh [安装目录，默认 ~/hermes-console]
+# 功能：下载代码 → 装依赖 → 自动扫描本机Hermes实例 → 启动
+set -euo pipefail
+
+INSTALL_DIR="${1:-$HOME/hermes-console}"
+PORT="${CONSOLE_PORT:-8787}"
+REPO="https://github.com/qq5871480/hermes-console.git"
+
+echo "==> Hermes Console 一键安装"
+
+# 0. 依赖检查
+command -v python3 >/dev/null || { echo "✗ 需要 python3（3.10+）"; exit 1; }
+PYV=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' || { echo "✗ Python 版本 $PYV 太低，需要 3.10+"; exit 1; }
+command -v git >/dev/null || { echo "✗ 需要 git（国内网络不通可用镜像：git clone https://gitclone.com/github.com/qq5871480/hermes-console）"; exit 1; }
+
+# 1. 下载代码（已存在则更新）
+if [ -d "$INSTALL_DIR/.git" ]; then
+  echo "==> 已有安装，拉取最新代码…"
+  git -C "$INSTALL_DIR" pull --ff-only || echo "  （拉取失败，用现有代码继续）"
+else
+  echo "==> 下载代码到 $INSTALL_DIR …"
+  git clone --depth 1 "$REPO" "$INSTALL_DIR" || {
+    echo "  GitHub 直连失败，尝试镜像…"
+    git clone --depth 1 "https://gitclone.com/github.com/qq5871480/hermes-console.git" "$INSTALL_DIR"
+  }
+fi
+cd "$INSTALL_DIR"
+
+# 2. 装依赖
+echo "==> 创建虚拟环境并安装依赖…"
+[ -d venv ] || python3 -m venv venv
+./venv/bin/pip install -q --upgrade pip
+# 国内pip慢可用：./venv/bin/pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+./venv/bin/pip install -q -r requirements.txt
+
+# 3. 自动扫描 Hermes 实例
+echo "==> 扫描本机 Hermes 实例…"
+HERMES_DIR="${HERMES_HOME:-}"
+if [ -z "$HERMES_DIR" ]; then
+  for d in "$HOME/.hermes" /opt/hermes /home/*/.hermes; do
+    if [ -f "$d/config.yaml" ]; then HERMES_DIR="$d"; break; fi
+  done
+fi
+if [ -z "$HERMES_DIR" ]; then
+  echo "  ⚠ 未找到 Hermes 实例（config.yaml）。将使用默认 ~/.hermes。"
+  echo "    如你的实例在别处，启动前设置：export HERMES_HOME=/路径/到/.hermes"
+  HERMES_DIR="$HOME/.hermes"
+else
+  echo "  ✓ 找到实例：$HERMES_DIR"
+fi
+
+# 4. 启动
+export HERMES_HOME="$HERMES_DIR"
+export CONSOLE_BACKUP_DIR="${CONSOLE_BACKUP_DIR:-$HOME/hermes-console-backups}"
+export CONSOLE_GATEWAY_SERVICE="${CONSOLE_GATEWAY_SERVICE:-hermes-gateway}"
+
+echo "==> 启动控制台（端口 $PORT）…"
+echo "    访问：http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '服务器IP'):$PORT"
+echo "    用户名：admin"
+echo "    初始密码：见下方启动日志第一行 [hermes-console] initial ..."
+echo "    （首次登录会强制修改密码）"
+echo "    生产部署/开机自启请参考仓库 README 的 systemd 部分。"
+echo
+exec ./venv/bin/gunicorn -w 2 --timeout 300 -b "0.0.0.0:$PORT" app:app

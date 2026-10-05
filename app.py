@@ -29,9 +29,19 @@ APP_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get('CONSOLE_DB', str(APP_DIR / 'console.db')))
 INIT_PASSWORD = os.environ.get('CONSOLE_INIT_PASSWORD', '')
 if not INIT_PASSWORD:
-    # 未指定初始密码时随机生成，首次启动打印到日志（仅初始化admin账户时生效）
-    INIT_PASSWORD = 'hc-' + secrets.token_hex(8)
-    print(f'[hermes-console] initial init_password (first init only, change after login): {INIT_PASSWORD}')
+    # 未指定时随机生成一次并落盘（600权限），保证多worker共用同一个初始密码
+    _pwf = Path(os.environ.get('CONSOLE_DB', str(APP_DIR / 'console.db'))).with_suffix('.initpw')
+    try:
+        if _pwf.exists():
+            INIT_PASSWORD = _pwf.read_text(encoding='utf-8').strip()
+        if not INIT_PASSWORD:
+            INIT_PASSWORD = 'hc-' + secrets.token_hex(8)
+            _pwf.write_text(INIT_PASSWORD, encoding='utf-8')
+            os.chmod(_pwf, 0o600)
+        print(f'[hermes-console] 初始密码（首次登录用，登录后强制修改）: {INIT_PASSWORD}')
+    except Exception:
+        INIT_PASSWORD = 'hc-' + secrets.token_hex(8)
+        print(f'[hermes-console] 初始密码（首次登录用，登录后强制修改）: {INIT_PASSWORD}')
 
 def _resolve_hermes_bin():
     env = os.environ.get('HERMES_BIN')
@@ -127,7 +137,7 @@ def init_db():
             login_fails INTEGER DEFAULT 0, locked_until REAL DEFAULT 0)''')
         if not conn.execute('SELECT id FROM users WHERE username="admin"').fetchone():
             salt = secrets.token_hex(16)
-            conn.execute('INSERT INTO users(username,pw_hash,salt,must_change) VALUES(?,?,?,1)',
+            conn.execute('INSERT OR IGNORE INTO users(username,pw_hash,salt,must_change) VALUES(?,?,?,1)',
                          ('admin', hashlib.pbkdf2_hmac('sha256', INIT_PASSWORD.encode(), salt.encode(), 200000).hex(), salt))
 
 def verify_pw(username, password):
@@ -684,7 +694,9 @@ def model():
         return redirect(url_for('model'))
     with db() as conn:
         models = [dict(r) for r in conn.execute('SELECT * FROM models ORDER BY is_current DESC, created DESC')]
-    return render_template('model.html', cur=m, plist=plist, reg=reg, models=models)
+    # provider id → 中文名映射，模板显示中文
+    pnames = {k: p.get('cn_name') or p.get('name') or k for k, p in reg.items()}
+    return render_template('model.html', cur=m, plist=plist, reg=reg, models=models, pnames=pnames)
 
 @app.route('/model/models', methods=['POST'])
 @login_required

@@ -5,9 +5,9 @@
 <div class="card">
 <h3>当前生效配置</h3>
 <table>
-<tr><td style="width:140px;color:var(--mut)">provider</td><td class="mono">{{cur.get('provider','（未设）')}}</td></tr>
-<tr><td style="color:var(--mut)">default model</td><td class="mono">{{cur.get('default','（未设）')}}</td></tr>
-<tr><td style="color:var(--mut)">base_url</td><td class="mono">{{cur.get('base_url','（默认）')}}</td></tr>
+<tr><td style="width:140px;color:var(--mut)">服务商</td><td>{{pnames.get(cur.get('provider',''), cur.get('provider','（未设置）'))}}{% if cur.get('provider') %}　<span class="mono" style="color:var(--mut);font-size:11.5px">{{cur.get('provider')}}</span>{% endif %}</td></tr>
+<tr><td style="color:var(--mut)">当前模型</td><td class="mono">{{cur.get('default','（未设置）')}}</td></tr>
+<tr><td style="color:var(--mut)">接入地址</td><td class="mono">{{cur.get('base_url') or '（服务商官方默认）'}}</td></tr>
 </table>
 </div>
 
@@ -19,7 +19,7 @@
 {% for m2 in models %}
 <tr>
 <td>{% if m2.is_current %}<span class="tag g">当前</span>{% endif %}</td>
-<td class="mono">{{m2.provider}}</td>
+<td>{{pnames.get(m2.provider, m2.provider)}}{% if pnames.get(m2.provider) %}<div class="mono" style="color:var(--mut);font-size:11px">{{m2.provider}}</div>{% endif %}</td>
 <td class="mono">{{m2.model_name}}</td>
 <td class="mono" style="font-size:11.5px;color:var(--mut)">{{m2.base_url or '官方默认'}}</td>
 <td>
