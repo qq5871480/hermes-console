@@ -21,7 +21,7 @@ Four jobs, four pages: **Model settings · Chat channels · Skills · Backup & r
 
 ```bash
 # Requirements: Python 3.10+, Hermes Agent installed on the target machine
-git clone https://github.com/5871480/hermes-console.git
+git clone https://github.com/qq5871480/hermes-console.git
 cd hermes-console
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 
