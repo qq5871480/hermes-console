@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}会话通道{% endblock %}
+{% block body %}
+<h2>会话通道</h2>
+<div class="card">
+<h3>Gateway 服务</h3>
+<p>状态：<span class="tag {{ 'g' if gw=='active' else 'r' }}">{{gw}}</span>　<span style="color:var(--mut);font-size:12.5px">保存任何通道配置后，点「重启」生效</span></p>
+<form class="inline" method="post" action="/channels/ctl"><input type="hidden" name="action" value="restart"><button class="btn warn">重启 Gateway</button></form>
+<form class="inline" method="post" action="/channels/ctl"><input type="hidden" name="action" value="stop"><button class="btn danger">停止</button></form>
+<form class="inline" method="post" action="/channels/ctl"><input type="hidden" name="action" value="start"><button class="btn">启动</button></form>
+</div>
+
+<h3 style="margin:18px 0 8px">国内平台</h3>
+{% for k,p in plats.items() if p.order < 50 %}
+<div class="card">
+<h3 style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="tg('{{k}}')">
+<span>{{p.emoji}} {{p.label}}</span>
+<span class="tag {{ 'g' if status[k]=='on' else 'gray' }}">{{ '已配置' if status[k]=='on' else '未配置' }}</span>
+<span style="margin-left:auto;color:var(--mut);font-size:12px" id="arrow_{{k}}">{{ '收起 ▲' if status[k]=='on' else '展开配置 ▼' }}</span>
+</h3>
+<div id="panel_{{k}}" style="display:{{ 'block' if status[k]=='on' else 'none' }}">
+<ol style="color:var(--mut);font-size:13px;margin:6px 0 12px 18px;padding:0">{% for s in p.instructions %}<li>{{s}}</li>{% endfor %}</ol>
+<form method="post" action="/channels/save">
+<input type="hidden" name="platform" value="{{k}}">
+<table>
+{% for v in p.vars %}
+<tr><td style="width:250px;font-size:13px">{{v.prompt}}<div class="mono" style="color:var(--mut);font-size:11px">{{v.name}}</div></td>
+<td><input name="{{v.name}}" type="{{ 'password' if v.password else 'text' }}" placeholder="{{ '已存：' + envmask.get(v.name,'') if envmask.get(v.name) else (v.help or '未设置') }}" autocomplete="off">
+<div style="color:var(--mut);font-size:11.5px;margin-top:2px">留空 = 不改动</div></td></tr>
+{% endfor %}
+</table>
+<p class="row"><button class="btn">保存</button><span style="color:var(--mut);font-size:12px">写入 .env，重启 Gateway 后生效</span></p>
+</form>
+</div>
+</div>
+{% endfor %}
+
+<h3 style="margin:18px 0 8px;color:var(--mut)">其他平台</h3>
+{% for k,p in plats.items() if p.order >= 50 %}
+<div class="card">
+<h3 style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="tg('{{k}}')">
+<span>{{p.emoji or '🔌'}} {{p.label or k}}</span>
+<span class="tag {{ 'g' if status[k]=='on' else 'gray' }}">{{ '已配置' if status[k]=='on' else '未配置' }}</span>
+<span style="margin-left:auto;color:var(--mut);font-size:12px" id="arrow_{{k}}">展开配置 ▼</span>
+</h3>
+<div id="panel_{{k}}" style="display:none">
+<ol style="color:var(--mut);font-size:13px;margin:6px 0 12px 18px;padding:0">{% for s in p.instructions %}<li>{{s}}</li>{% endfor %}</ol>
+<form method="post" action="/channels/save">
+<input type="hidden" name="platform" value="{{k}}">
+<table>
+{% for v in p.vars %}
+<tr><td style="width:250px;font-size:13px">{{v.prompt}}<div class="mono" style="color:var(--mut);font-size:11px">{{v.name}}</div></td>
+<td><input name="{{v.name}}" type="{{ 'password' if v.password else 'text' }}" placeholder="{{ '已存：' + envmask.get(v.name,'') if envmask.get(v.name) else (v.help or '未设置') }}" autocomplete="off"></td></tr>
+{% endfor %}
+</table>
+<p><button class="btn">保存</button></p>
+</form>
+</div>
+</div>
+{% endfor %}
+
+<div class="card">
+<h3>Gateway 日志（近60行）</h3>
+<pre class="mono">{{log}}</pre>
+</div>
+<script>
+function tg(k){
+ const p=document.getElementById('panel_'+k), a=document.getElementById('arrow_'+k);
+ const open=p.style.display==='block';
+ p.style.display=open?'none':'block';
+ a.textContent=open?'展开配置 ▼':'收起 ▲';
+}
+</script>
+{% endblock %}

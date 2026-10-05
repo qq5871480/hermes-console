@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}仪表盘{% endblock %}
+{% block body %}
+<h2>仪表盘</h2>
+<div class="grid">
+<div class="stat"><div class="k">Hermes 版本</div><div class="v mono" style="font-size:15px">{{ver}}</div>
+<div style="margin-top:8px">
+<button class="btn ghost" id="chkbtn" style="padding:4px 12px;font-size:12.5px" onclick="verCheck(this)">检查更新</button>
+<button class="btn" id="updbtn" style="padding:4px 12px;font-size:12.5px" onclick="verUpdate()">更新</button>
+</div>
+<div id="verout" style="margin-top:6px;font-size:12px;color:var(--mut);white-space:pre-line"></div></div>
+<div class="stat"><div class="k">Gateway 状态</div><div class="v"><span class="tag {{ 'g' if gw=='active' else 'r' }}">{{gw}}</span></div>
+{% if gw != 'active' %}<div style="margin-top:8px"><button class="btn danger" style="padding:4px 12px;font-size:12.5px" onclick="verRepair()">🔧 一键修复</button></div>{% endif %}
+<div style="margin-top:8px"><button class="btn ghost" style="padding:4px 12px;font-size:12.5px" onclick="verRepair()">🔧 一键修复</button></div>
+<div style="color:var(--mut);font-size:11.5px;margin-top:4px">重建依赖环境+重启+健康校验</div></div>
+<div class="stat"><div class="k">当前模型</div><div class="v mono" style="font-size:15px">{{model_default}}</div>
+<div style="color:var(--mut);font-size:12px;margin-top:2px">服务商：{{model_provider}}</div></div>
+<div class="stat"><div class="k">技能数</div><div class="v">{{n_skills}}</div></div>
+<div class="stat"><div class="k">备份数</div><div class="v">{{n_backups}}</div></div>
+<div class="stat"><div class="k">已存密钥</div><div class="v">{{n_keys}} 个</div></div>
+<div class="stat"><div class="k">磁盘占用</div><div class="v mono" style="font-size:15px">{{disk}}</div></div>
+<div class="stat"><div class="k">内存占用</div><div class="v mono" style="font-size:15px">{{mem}}</div></div>
+</div>
+<div class="card" style="margin-top:16px">
+<h3>实例信息</h3>
+<table>
+<tr><td style="width:160px;color:var(--mut)">HERMES_HOME</td><td class="mono">{{home}}</td></tr>
+<tr><td style="color:var(--mut)">配置文件</td><td class="mono">{{home}}/config.yaml（修改前自动留 .console-bak 备份）</td></tr>
+</table>
+</div>
+<div id="upmask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99">
+<div style="max-width:480px;margin:15vh auto;background:#fff;border-radius:10px;padding:24px">
+<h3 style="margin:0 0 12px" id="uptitle">⬆️ 正在执行</h3>
+<div id="upstage" style="font-size:13.5px;color:var(--mut);white-space:pre-line">准备中…</div>
+<div id="upresult" style="margin-top:14px"></div>
+</div></div>
+<script>
+let uptimer=null;
+// 页面加载即查一次状态：已最新→更新按钮置灰
+fetch('/version/status').then(r=>r.json()).then(s=>{
+  if(s.latest===true){setLatest(true,'✓ 已是最新版本（点「检查更新」可重新核对）');}
+  else if(s.latest===false){setLatest(false,'');}
+  if(s.running){openMask(s.stage&&s.stage.indexOf('🔧')>=0?'🔧 正在修复':'⬆️ 正在更新 Hermes');uptimer=setInterval(pollStatus,2500);}
+}).catch(()=>{});
+function setLatest(isL,msg){
+  const b=document.getElementById('updbtn');
+  b.disabled=isL;
+  b.style.opacity=isL?'0.4':'1';
+  b.style.cursor=isL?'not-allowed':'pointer';
+  b.title=isL?'已是最新版本':'更新到官方最新版';
+  if(msg)document.getElementById('verout').textContent=msg;
+}
+function verCheck(btn){
+  const o=document.getElementById('verout');
+  btn.disabled=true; o.textContent='检查中…（对比官方仓库，最长45秒）';
+  fetch('/version/check',{method:'POST'}).then(r=>r.json()).then(j=>{
+   btn.disabled=false;
+   if(j.ok&&j.latest){setLatest(true,'');o.textContent=j.msg;}
+   else{setLatest(false,'');o.innerHTML=j.ok?j.msg.replace(/\n/g,'<br>'):'<span style="color:var(--err)">'+(j.msg||'检查失败')+'</span>';}
+  }).catch(e=>{btn.disabled=false;o.textContent='检查失败：'+e;});
+}
+function openMask(title){
+  document.getElementById('uptitle').textContent=title;
+  document.getElementById('upresult').innerHTML='';
+  document.getElementById('upmask').style.display='block';
+}
+function verUpdate(){
+ if(!confirm('开始更新到官方最新版？\n过程：拉代码→重建依赖→重启Gateway（会话短暂中断约1分钟）')) return;
+ fetch('/version/update',{method:'POST'}).then(r=>r.json()).then(j=>{
+   if(!j.started){alert(j.msg);return;}
+   openMask('⬆️ 正在更新 Hermes');
+   uptimer=setInterval(pollStatus,2500);pollStatus();
+ });
+}
+function verRepair(){
+ if(!confirm('一键修复：重建依赖环境（hermes pm repair）→ 重启Gateway → 健康校验。\n约1~3分钟，期间会话中断。继续？')) return;
+ fetch('/version/repair',{method:'POST'}).then(r=>r.json()).then(j=>{
+   if(!j.started){alert(j.msg);return;}
+   openMask('🔧 正在修复');
+   uptimer=setInterval(pollStatus,2500);pollStatus();
+ });
+}
+function pollStatus(){
+ fetch('/version/status').then(r=>r.json()).then(s=>{
+   document.getElementById('upstage').textContent=s.running?(s.stage||'处理中…'):'';
+   if(!s.running){
+     clearInterval(uptimer);
+     const res=document.getElementById('upresult');
+     res.innerHTML='<div class="flash '+(s.ok?'ok':'err')+'">'+(s.result||'').replace(/\n/g,'<br>')+'</div>';
+     document.getElementById('upstage').textContent='';
+     if(s.ok)setTimeout(()=>{document.getElementById('upmask').style.display='none';location.reload();},4000);
+   }
+ });
+}
+</script>
+{% endblock %}

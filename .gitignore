@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+
+# 运行时数据（含密钥/DB/备份，绝不入库）
+console.db
+*.db
+.update.json
+*.log
+backups/
+*.tar.gz
+
+# 本地配置
+.env
+config.local.py
+
+# 系统
+.DS_Store
+Thumbs.db

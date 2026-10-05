@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}技能管理{% endblock %}
+{% block body %}
+<h2>技能管理</h2>
+<div class="card">
+<h3>上传新技能</h3>
+<form method="post" action="/skills/upload" enctype="multipart/form-data" class="row">
+<input name="name" placeholder="技能名（小写字母数字-_）" style="max-width:260px" required pattern="[a-z0-9][a-z0-9_-]{1,63}">
+<input name="zip" type="file" accept=".zip" style="max-width:320px" required>
+<button class="btn">上传</button>
+</form>
+<p style="color:var(--mut);font-size:12.5px">zip内需含 SKILL.md；禁用=移入 skills-disabled/（不删除）。<br>
+中文描述三种来源（优先级从高到低）：① 本页手工填写 ② SKILL.md frontmatter 里加 <code>description_zh:</code> 字段（新技能推荐） ③ 控制台内置词典。</p>
+</div>
+<div class="card">
+<table>
+<tr><th>技能</th><th>描述</th><th style="width:70px">状态</th><th style="width:270px">操作</th></tr>
+{% for it in items %}
+<tr>
+<td class="mono">{{it.path}}</td>
+<td style="font-size:13px">{{it.desc}}{% if not it.zh %}<div style="color:var(--mut);font-size:11.5px">（英文原文，可点「译」填中文）</div>{% endif %}</td>
+<td><span class="tag {{ 'g' if it.on else 'gray' }}">{{ '启用' if it.on else '禁用' }}</span></td>
+<td>
+<a class="btn ghost" href="/skills/view?path={{it.path}}" style="padding:5px 10px">查看</a>
+<button class="btn ghost" style="padding:5px 10px" onclick="zh('{{it.path}}','{{it.zh|e}}')">译</button>
+<form class="inline" method="post" action="/skills/toggle">
+<input type="hidden" name="path" value="{{it.path}}"><input type="hidden" name="on" value="{{ '0' if it.on else '1' }}">
+<button class="btn {{ 'danger' if it.on else '' }}" style="padding:5px 10px">{{ '禁用' if it.on else '启用' }}</button>
+</form>
+</td>
+</tr>
+{% else %}<tr><td colspan="4" style="color:var(--mut)">暂无技能</td></tr>{% endfor %}
+</table>
+</div>
+<form method="post" action="/skills/zh" id="zhform" style="display:none">
+<input type="hidden" name="path" id="zhpath"><input type="hidden" name="desc_zh" id="zhval">
+</form>
+<script>
+function zh(path, cur){
+ const v=prompt('填写「'+path+'」的中文描述（留空=清除，恢复显示英文原文）：', cur||'');
+ if(v===null) return;
+ document.getElementById('zhpath').value=path;
+ document.getElementById('zhval').value=v.trim();
+ document.getElementById('zhform').submit();
+}
+</script>
+{% endblock %}

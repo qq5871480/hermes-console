@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}登录 - Hermes Console{% endblock %}
+{% block body %}
+<div style="max-width:380px;margin:80px auto">
+<div class="card">
+<h2 style="text-align:center">⌘ Hermes Console</h2>
+<p style="color:var(--mut);text-align:center;font-size:13px;margin-bottom:18px">Hermes Agent 管理控制台</p>
+<form method="post">
+<p><input name="username" placeholder="用户名（默认 admin）" value="admin" autocomplete="username"></p>
+<p><input name="password" type="password" placeholder="密码" autocomplete="current-password"></p>
+<p><button class="btn" style="width:100%">登 录</button></p>
+</form>
+</div>
+</div>
+{% endblock %}

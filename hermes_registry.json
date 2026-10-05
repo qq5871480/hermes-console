@@ -1,0 +1,770 @@
+{
+ "providers": {
+  "openai-api": {
+   "name": "OpenAI API",
+   "env_vars": [
+    "OPENAI_API_KEY"
+   ],
+   "base_url_env": "OPENAI_BASE_URL",
+   "base_url": "https://api.openai.com/v1"
+  },
+  "lmstudio": {
+   "name": "LM Studio",
+   "env_vars": [
+    "LM_API_KEY"
+   ],
+   "base_url_env": "LM_BASE_URL",
+   "base_url": "http://127.0.0.1:1234/v1"
+  },
+  "copilot": {
+   "name": "GitHub Copilot",
+   "env_vars": [
+    "COPILOT_GITHUB_TOKEN",
+    "GH_TOKEN",
+    "GITHUB_TOKEN"
+   ],
+   "base_url_env": "COPILOT_API_BASE_URL",
+   "base_url": "https://api.githubcopilot.com"
+  },
+  "gemini": {
+   "name": "Google AI Studio",
+   "env_vars": [
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY"
+   ],
+   "base_url_env": "GEMINI_BASE_URL",
+   "base_url": "https://generativelanguage.googleapis.com/v1beta"
+  },
+  "zai": {
+   "name": "Z.AI / GLM",
+   "env_vars": [
+    "GLM_API_KEY",
+    "ZAI_API_KEY",
+    "Z_AI_API_KEY"
+   ],
+   "base_url_env": "GLM_BASE_URL",
+   "base_url": "https://api.z.ai/api/paas/v4"
+  },
+  "kimi-coding": {
+   "name": "Kimi / Moonshot",
+   "env_vars": [
+    "KIMI_API_KEY",
+    "KIMI_CODING_API_KEY"
+   ],
+   "base_url_env": "KIMI_BASE_URL",
+   "base_url": "https://api.moonshot.ai/v1"
+  },
+  "kimi-coding-cn": {
+   "name": "Kimi / Moonshot (China)",
+   "env_vars": [
+    "KIMI_CN_API_KEY"
+   ],
+   "base_url_env": "",
+   "base_url": "https://api.moonshot.cn/v1"
+  },
+  "stepfun": {
+   "name": "StepFun Step Plan",
+   "env_vars": [
+    "STEPFUN_API_KEY"
+   ],
+   "base_url_env": "STEPFUN_BASE_URL",
+   "base_url": "https://api.stepfun.ai/step_plan/v1"
+  },
+  "arcee": {
+   "name": "Arcee AI",
+   "env_vars": [
+    "ARCEEAI_API_KEY"
+   ],
+   "base_url_env": "ARCEE_BASE_URL",
+   "base_url": "https://api.arcee.ai/api/v1"
+  },
+  "gmi": {
+   "name": "GMI Cloud",
+   "env_vars": [
+    "GMI_API_KEY"
+   ],
+   "base_url_env": "GMI_BASE_URL",
+   "base_url": "https://api.gmi-serving.com/v1"
+  },
+  "actual": {
+   "name": "Actual Computer",
+   "env_vars": [
+    "ACTUAL_API_KEY"
+   ],
+   "base_url_env": "ACTUAL_BASE_URL",
+   "base_url": "https://api.actual.inc/v1"
+  },
+  "minimax": {
+   "name": "MiniMax",
+   "env_vars": [
+    "MINIMAX_API_KEY"
+   ],
+   "base_url_env": "MINIMAX_BASE_URL",
+   "base_url": "https://api.minimax.io/anthropic"
+  },
+  "anthropic": {
+   "name": "Anthropic",
+   "env_vars": [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN"
+   ],
+   "base_url_env": "ANTHROPIC_BASE_URL",
+   "base_url": "https://api.anthropic.com"
+  },
+  "alibaba": {
+   "name": "Qwen Cloud",
+   "env_vars": [
+    "DASHSCOPE_API_KEY"
+   ],
+   "base_url_env": "DASHSCOPE_BASE_URL",
+   "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+  },
+  "alibaba-coding-plan": {
+   "name": "Alibaba Cloud (Coding Plan)",
+   "env_vars": [
+    "ALIBABA_CODING_PLAN_API_KEY",
+    "DASHSCOPE_API_KEY"
+   ],
+   "base_url_env": "ALIBABA_CODING_PLAN_BASE_URL",
+   "base_url": "https://coding-intl.dashscope.aliyuncs.com/v1"
+  },
+  "minimax-cn": {
+   "name": "MiniMax (China)",
+   "env_vars": [
+    "MINIMAX_CN_API_KEY"
+   ],
+   "base_url_env": "MINIMAX_CN_BASE_URL",
+   "base_url": "https://api.minimaxi.com/anthropic"
+  },
+  "deepseek": {
+   "name": "DeepSeek",
+   "env_vars": [
+    "DEEPSEEK_API_KEY"
+   ],
+   "base_url_env": "DEEPSEEK_BASE_URL",
+   "base_url": "https://api.deepseek.com/v1"
+  },
+  "xai": {
+   "name": "xAI",
+   "env_vars": [
+    "XAI_API_KEY"
+   ],
+   "base_url_env": "XAI_BASE_URL",
+   "base_url": "https://api.x.ai/v1"
+  },
+  "nvidia": {
+   "name": "NVIDIA NIM",
+   "env_vars": [
+    "NVIDIA_API_KEY"
+   ],
+   "base_url_env": "NVIDIA_BASE_URL",
+   "base_url": "https://integrate.api.nvidia.com/v1"
+  },
+  "ai-gateway": {
+   "name": "Vercel AI Gateway",
+   "env_vars": [
+    "AI_GATEWAY_API_KEY"
+   ],
+   "base_url_env": "AI_GATEWAY_BASE_URL",
+   "base_url": "https://ai-gateway.vercel.sh/v1"
+  },
+  "opencode-zen": {
+   "name": "OpenCode Zen",
+   "env_vars": [
+    "OPENCODE_ZEN_API_KEY"
+   ],
+   "base_url_env": "OPENCODE_ZEN_BASE_URL",
+   "base_url": "https://opencode.ai/zen/v1"
+  },
+  "opencode-go": {
+   "name": "OpenCode Go",
+   "env_vars": [
+    "OPENCODE_GO_API_KEY"
+   ],
+   "base_url_env": "OPENCODE_GO_BASE_URL",
+   "base_url": "https://opencode.ai/zen/go/v1"
+  },
+  "kilocode": {
+   "name": "Kilo Code",
+   "env_vars": [
+    "KILOCODE_API_KEY"
+   ],
+   "base_url_env": "KILOCODE_BASE_URL",
+   "base_url": "https://api.kilo.ai/api/gateway"
+  },
+  "huggingface": {
+   "name": "Hugging Face",
+   "env_vars": [
+    "HF_TOKEN"
+   ],
+   "base_url_env": "HF_BASE_URL",
+   "base_url": "https://router.huggingface.co/v1"
+  },
+  "xiaomi": {
+   "name": "Xiaomi MiMo",
+   "env_vars": [
+    "XIAOMI_API_KEY"
+   ],
+   "base_url_env": "XIAOMI_BASE_URL",
+   "base_url": "https://api.xiaomimimo.com/v1"
+  },
+  "tencent-tokenhub": {
+   "name": "Tencent TokenHub",
+   "env_vars": [
+    "TOKENHUB_API_KEY"
+   ],
+   "base_url_env": "TOKENHUB_BASE_URL",
+   "base_url": "https://tokenhub.tencentmaas.com/v1"
+  },
+  "tencent-tokenplan": {
+   "name": "Tencent TokenPlan",
+   "env_vars": [
+    "TOKENPLAN_API_KEY"
+   ],
+   "base_url_env": "TOKENPLAN_BASE_URL",
+   "base_url": "https://api.lkeap.cloud.tencent.com/plan/anthropic"
+  },
+  "ollama-cloud": {
+   "name": "Ollama Cloud",
+   "env_vars": [
+    "OLLAMA_API_KEY"
+   ],
+   "base_url_env": "OLLAMA_BASE_URL",
+   "base_url": "https://ollama.com/v1"
+  },
+  "azure-foundry": {
+   "name": "Azure Foundry",
+   "env_vars": [
+    "AZURE_FOUNDRY_API_KEY"
+   ],
+   "base_url_env": "AZURE_FOUNDRY_BASE_URL",
+   "base_url": ""
+  },
+  "alibaba-cn": {
+   "name": "Alibaba Cloud DashScope (China)",
+   "env_vars": [
+    "DASHSCOPE_API_KEY"
+   ],
+   "base_url_env": "DASHSCOPE_CN_BASE_URL",
+   "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  },
+  "dashscope-cn": {
+   "name": "Alibaba Cloud DashScope (China)",
+   "env_vars": [
+    "DASHSCOPE_API_KEY"
+   ],
+   "base_url_env": "DASHSCOPE_CN_BASE_URL",
+   "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  },
+  "alibaba-cloud-cn": {
+   "name": "Alibaba Cloud DashScope (China)",
+   "env_vars": [
+    "DASHSCOPE_API_KEY"
+   ],
+   "base_url_env": "DASHSCOPE_CN_BASE_URL",
+   "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  },
+  "alibaba-token-plan": {
+   "name": "Alibaba Cloud (Token Plan)",
+   "env_vars": [
+    "ALIBABA_TOKEN_PLAN_API_KEY"
+   ],
+   "base_url_env": "ALIBABA_TOKEN_PLAN_BASE_URL",
+   "base_url": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+  },
+  "dashscope-token-plan": {
+   "name": "Alibaba Cloud (Token Plan)",
+   "env_vars": [
+    "ALIBABA_TOKEN_PLAN_API_KEY"
+   ],
+   "base_url_env": "ALIBABA_TOKEN_PLAN_BASE_URL",
+   "base_url": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+  },
+  "alibaba-token-plan-cn": {
+   "name": "Alibaba Cloud (Token Plan, China)",
+   "env_vars": [
+    "ALIBABA_TOKEN_PLAN_CN_API_KEY",
+    "ALIBABA_TOKEN_PLAN_API_KEY"
+   ],
+   "base_url_env": "ALIBABA_TOKEN_PLAN_CN_BASE_URL",
+   "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+  },
+  "dashscope-token-plan-cn": {
+   "name": "Alibaba Cloud (Token Plan, China)",
+   "env_vars": [
+    "ALIBABA_TOKEN_PLAN_CN_API_KEY",
+    "ALIBABA_TOKEN_PLAN_API_KEY"
+   ],
+   "base_url_env": "ALIBABA_TOKEN_PLAN_CN_BASE_URL",
+   "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+  },
+  "alibaba-coding-plan-cn": {
+   "name": "Alibaba Cloud (Coding Plan, China)",
+   "env_vars": [
+    "ALIBABA_CODING_PLAN_CN_API_KEY",
+    "ALIBABA_CODING_PLAN_API_KEY",
+    "DASHSCOPE_API_KEY"
+   ],
+   "base_url_env": "ALIBABA_CODING_PLAN_CN_BASE_URL",
+   "base_url": "https://coding.dashscope.aliyuncs.com/v1"
+  },
+  "alibaba-coding-cn": {
+   "name": "Alibaba Cloud (Coding Plan, China)",
+   "env_vars": [
+    "ALIBABA_CODING_PLAN_CN_API_KEY",
+    "ALIBABA_CODING_PLAN_API_KEY",
+    "DASHSCOPE_API_KEY"
+   ],
+   "base_url_env": "ALIBABA_CODING_PLAN_CN_BASE_URL",
+   "base_url": "https://coding.dashscope.aliyuncs.com/v1"
+  },
+  "dashscope-coding-cn": {
+   "name": "Alibaba Cloud (Coding Plan, China)",
+   "env_vars": [
+    "ALIBABA_CODING_PLAN_CN_API_KEY",
+    "ALIBABA_CODING_PLAN_API_KEY",
+    "DASHSCOPE_API_KEY"
+   ],
+   "base_url_env": "ALIBABA_CODING_PLAN_CN_BASE_URL",
+   "base_url": "https://coding.dashscope.aliyuncs.com/v1"
+  },
+  "commandcode": {
+   "name": "CommandCode",
+   "env_vars": [
+    "COMMANDCODE_API_KEY"
+   ],
+   "base_url_env": "COMMANDCODE_BASE_URL",
+   "base_url": "https://api.commandcode.ai/provider/v1"
+  },
+  "commandcode-chat": {
+   "name": "CommandCode",
+   "env_vars": [
+    "COMMANDCODE_API_KEY"
+   ],
+   "base_url_env": "COMMANDCODE_BASE_URL",
+   "base_url": "https://api.commandcode.ai/provider/v1"
+  },
+  "commandcode-anthropic": {
+   "name": "CommandCode (Anthropic)",
+   "env_vars": [
+    "COMMANDCODE_API_KEY"
+   ],
+   "base_url_env": "COMMANDCODE_ANTHROPIC_BASE_URL",
+   "base_url": "https://api.commandcode.ai/provider/v1"
+  },
+  "commandcode-claude": {
+   "name": "CommandCode (Anthropic)",
+   "env_vars": [
+    "COMMANDCODE_API_KEY"
+   ],
+   "base_url_env": "COMMANDCODE_ANTHROPIC_BASE_URL",
+   "base_url": "https://api.commandcode.ai/provider/v1"
+  },
+  "deepinfra": {
+   "name": "DeepInfra",
+   "env_vars": [
+    "DEEPINFRA_API_KEY"
+   ],
+   "base_url_env": "DEEPINFRA_BASE_URL",
+   "base_url": "https://api.deepinfra.com/v1/openai"
+  },
+  "deep-infra": {
+   "name": "DeepInfra",
+   "env_vars": [
+    "DEEPINFRA_API_KEY"
+   ],
+   "base_url_env": "DEEPINFRA_BASE_URL",
+   "base_url": "https://api.deepinfra.com/v1/openai"
+  },
+  "deepinfra-ai": {
+   "name": "DeepInfra",
+   "env_vars": [
+    "DEEPINFRA_API_KEY"
+   ],
+   "base_url_env": "DEEPINFRA_BASE_URL",
+   "base_url": "https://api.deepinfra.com/v1/openai"
+  },
+  "fireworks": {
+   "name": "Fireworks AI",
+   "env_vars": [
+    "FIREWORKS_API_KEY"
+   ],
+   "base_url_env": "",
+   "base_url": "https://api.fireworks.ai/inference/v1"
+  },
+  "fireworks-ai": {
+   "name": "Fireworks AI",
+   "env_vars": [
+    "FIREWORKS_API_KEY"
+   ],
+   "base_url_env": "",
+   "base_url": "https://api.fireworks.ai/inference/v1"
+  },
+  "fw": {
+   "name": "Fireworks AI",
+   "env_vars": [
+    "FIREWORKS_API_KEY"
+   ],
+   "base_url_env": "",
+   "base_url": "https://api.fireworks.ai/inference/v1"
+  },
+  "meta-ai": {
+   "name": "Meta Model API",
+   "env_vars": [
+    "MODEL_API_KEY",
+    "META_API_KEY",
+    "META_MODEL_API_KEY"
+   ],
+   "base_url_env": "META_BASE_URL",
+   "base_url": "https://api.meta.ai/v1"
+  },
+  "meta": {
+   "name": "Meta Model API",
+   "env_vars": [
+    "MODEL_API_KEY",
+    "META_API_KEY",
+    "META_MODEL_API_KEY"
+   ],
+   "base_url_env": "META_BASE_URL",
+   "base_url": "https://api.meta.ai/v1"
+  },
+  "muse": {
+   "name": "Meta Model API",
+   "env_vars": [
+    "MODEL_API_KEY",
+    "META_API_KEY",
+    "META_MODEL_API_KEY"
+   ],
+   "base_url_env": "META_BASE_URL",
+   "base_url": "https://api.meta.ai/v1"
+  },
+  "muse-spark": {
+   "name": "Meta Model API",
+   "env_vars": [
+    "MODEL_API_KEY",
+    "META_API_KEY",
+    "META_MODEL_API_KEY"
+   ],
+   "base_url_env": "META_BASE_URL",
+   "base_url": "https://api.meta.ai/v1"
+  },
+  "model-api": {
+   "name": "Meta Model API",
+   "env_vars": [
+    "MODEL_API_KEY",
+    "META_API_KEY",
+    "META_MODEL_API_KEY"
+   ],
+   "base_url_env": "META_BASE_URL",
+   "base_url": "https://api.meta.ai/v1"
+  },
+  "msl": {
+   "name": "Meta Model API",
+   "env_vars": [
+    "MODEL_API_KEY",
+    "META_API_KEY",
+    "META_MODEL_API_KEY"
+   ],
+   "base_url_env": "META_BASE_URL",
+   "base_url": "https://api.meta.ai/v1"
+  },
+  "nebius-token-factory": {
+   "name": "Nebius Token Factory",
+   "env_vars": [
+    "NEBIUS_API_KEY",
+    "NEBIUS_TOKEN_FACTORY_API_KEY"
+   ],
+   "base_url_env": "NEBIUS_BASE_URL",
+   "base_url": "https://api.tokenfactory.nebius.com/v1"
+  },
+  "nebius": {
+   "name": "Nebius Token Factory",
+   "env_vars": [
+    "NEBIUS_API_KEY",
+    "NEBIUS_TOKEN_FACTORY_API_KEY"
+   ],
+   "base_url_env": "NEBIUS_BASE_URL",
+   "base_url": "https://api.tokenfactory.nebius.com/v1"
+  },
+  "nebius-tokenfactory": {
+   "name": "Nebius Token Factory",
+   "env_vars": [
+    "NEBIUS_API_KEY",
+    "NEBIUS_TOKEN_FACTORY_API_KEY"
+   ],
+   "base_url_env": "NEBIUS_BASE_URL",
+   "base_url": "https://api.tokenfactory.nebius.com/v1"
+  },
+  "nebius-tf": {
+   "name": "Nebius Token Factory",
+   "env_vars": [
+    "NEBIUS_API_KEY",
+    "NEBIUS_TOKEN_FACTORY_API_KEY"
+   ],
+   "base_url_env": "NEBIUS_BASE_URL",
+   "base_url": "https://api.tokenfactory.nebius.com/v1"
+  },
+  "token-factory": {
+   "name": "Nebius Token Factory",
+   "env_vars": [
+    "NEBIUS_API_KEY",
+    "NEBIUS_TOKEN_FACTORY_API_KEY"
+   ],
+   "base_url_env": "NEBIUS_BASE_URL",
+   "base_url": "https://api.tokenfactory.nebius.com/v1"
+  },
+  "tokenfactory": {
+   "name": "Nebius Token Factory",
+   "env_vars": [
+    "NEBIUS_API_KEY",
+    "NEBIUS_TOKEN_FACTORY_API_KEY"
+   ],
+   "base_url_env": "NEBIUS_BASE_URL",
+   "base_url": "https://api.tokenfactory.nebius.com/v1"
+  },
+  "novita": {
+   "name": "NovitaAI",
+   "env_vars": [
+    "NOVITA_API_KEY"
+   ],
+   "base_url_env": "NOVITA_BASE_URL",
+   "base_url": "https://api.novita.ai/openai/v1"
+  },
+  "novita-ai": {
+   "name": "NovitaAI",
+   "env_vars": [
+    "NOVITA_API_KEY"
+   ],
+   "base_url_env": "NOVITA_BASE_URL",
+   "base_url": "https://api.novita.ai/openai/v1"
+  },
+  "novitaai": {
+   "name": "NovitaAI",
+   "env_vars": [
+    "NOVITA_API_KEY"
+   ],
+   "base_url_env": "NOVITA_BASE_URL",
+   "base_url": "https://api.novita.ai/openai/v1"
+  },
+  "router": {
+   "name": "Ramp Router",
+   "env_vars": [
+    "RAMP_ROUTER_API_KEY",
+    "ROUTER_API_KEY"
+   ],
+   "base_url_env": "RAMP_ROUTER_BASE_URL",
+   "base_url": "https://api.router.com/v1"
+  },
+  "ramp-router": {
+   "name": "Ramp Router",
+   "env_vars": [
+    "RAMP_ROUTER_API_KEY",
+    "ROUTER_API_KEY"
+   ],
+   "base_url_env": "RAMP_ROUTER_BASE_URL",
+   "base_url": "https://api.router.com/v1"
+  },
+  "ramp": {
+   "name": "Ramp Router",
+   "env_vars": [
+    "RAMP_ROUTER_API_KEY",
+    "ROUTER_API_KEY"
+   ],
+   "base_url_env": "RAMP_ROUTER_BASE_URL",
+   "base_url": "https://api.router.com/v1"
+  },
+  "router.com": {
+   "name": "Ramp Router",
+   "env_vars": [
+    "RAMP_ROUTER_API_KEY",
+    "ROUTER_API_KEY"
+   ],
+   "base_url_env": "RAMP_ROUTER_BASE_URL",
+   "base_url": "https://api.router.com/v1"
+  },
+  "upstage": {
+   "name": "Upstage Solar",
+   "env_vars": [
+    "UPSTAGE_API_KEY"
+   ],
+   "base_url_env": "UPSTAGE_BASE_URL",
+   "base_url": "https://api.upstage.ai/v1"
+  },
+  "solar": {
+   "name": "Upstage Solar",
+   "env_vars": [
+    "UPSTAGE_API_KEY"
+   ],
+   "base_url_env": "UPSTAGE_BASE_URL",
+   "base_url": "https://api.upstage.ai/v1"
+  }
+ },
+ "platforms": {
+  "mattermost": {
+   "label": "Mattermost",
+   "emoji": "💬",
+   "token_var": "MATTERMOST_TOKEN",
+   "instructions": [
+    "1. In Mattermost: Integrations → Bot Accounts → Add Bot Account",
+    "   (System Console → Integrations → Bot Accounts must be enabled)",
+    "2. Give it a username (e.g. hermes) and copy the bot token",
+    "3. Works with any self-hosted Mattermost instance — enter your server URL",
+    "4. To find your user ID: click your avatar (top-left) → Profile",
+    "   Your user ID is displayed there — click it to copy.",
+    "   ⚠ This is NOT your username — it's a 26-character alphanumeric ID.",
+    "5. To get a channel ID: click the channel name → View Info → copy the ID"
+   ],
+   "vars": [
+    {
+     "name": "MATTERMOST_URL",
+     "prompt": "Server URL (e.g. https://mm.example.com)",
+     "password": false,
+     "help": "Your Mattermost server URL. Works with any self-hosted instance."
+    },
+    {
+     "name": "MATTERMOST_TOKEN",
+     "prompt": "Bot token",
+     "password": true,
+     "help": "Paste the bot token from step 2 above."
+    },
+    {
+     "name": "MATTERMOST_ALLOWED_USERS",
+     "prompt": "Allowed user IDs (comma-separated)",
+     "password": false,
+     "help": "Your Mattermost user ID from step 4 above."
+    },
+    {
+     "name": "MATTERMOST_HOME_CHANNEL",
+     "prompt": "Home channel ID (for cron/notification delivery, or empty to set later with /set-home)",
+     "password": false,
+     "help": "Channel ID where Hermes delivers cron results and notifications."
+    },
+    {
+     "name": "MATTERMOST_REPLY_MODE",
+     "prompt": "Reply mode — 'off' for flat messages, 'thread' for threaded replies (default: off)",
+     "password": false,
+     "help": "off = flat channel messages, thread = replies nest under your message."
+    }
+   ]
+  },
+  "signal": {
+   "label": "Signal",
+   "emoji": "📡",
+   "token_var": "SIGNAL_HTTP_URL",
+   "instructions": [],
+   "vars": []
+  },
+  "weixin": {
+   "label": "Weixin / WeChat",
+   "emoji": "💬",
+   "token_var": "WEIXIN_ACCOUNT_ID",
+   "instructions": [],
+   "vars": []
+  },
+  "bluebubbles": {
+   "label": "BlueBubbles (iMessage)",
+   "emoji": "💬",
+   "token_var": "BLUEBUBBLES_SERVER_URL",
+   "instructions": [
+    "1. Install BlueBubbles on a Mac that will act as your iMessage server:",
+    "   https://bluebubbles.app/",
+    "2. Complete the BlueBubbles setup wizard — sign in with your Apple ID",
+    "3. In BlueBubbles Settings → API, note the Server URL and password",
+    "4. The server URL is typically http://<your-mac-ip>:1234",
+    "5. Hermes connects via the BlueBubbles REST API and receives",
+    "   incoming messages via a local webhook",
+    "6. To authorize users, use DM pairing: hermes pairing generate bluebubbles",
+    "   Share the code — the user sends it via iMessage to get approved"
+   ],
+   "vars": [
+    {
+     "name": "BLUEBUBBLES_SERVER_URL",
+     "prompt": "BlueBubbles server URL (e.g. http://192.168.1.10:1234)",
+     "password": false,
+     "help": "The URL shown in BlueBubbles Settings → API."
+    },
+    {
+     "name": "BLUEBUBBLES_PASSWORD",
+     "prompt": "BlueBubbles server password",
+     "password": true,
+     "help": "The password shown in BlueBubbles Settings → API."
+    },
+    {
+     "name": "BLUEBUBBLES_ALLOWED_USERS",
+     "prompt": "Pre-authorized phone numbers or iMessage IDs (comma-separated, or leave empty for DM pairing)",
+     "password": false,
+     "help": "Optional — pre-authorize specific users. Leave empty to use DM pairing instead (recommended)."
+    },
+    {
+     "name": "BLUEBUBBLES_HOME_CHANNEL",
+     "prompt": "Home channel (phone number or iMessage ID for cron/notifications, or empty)",
+     "password": false,
+     "help": "Phone number or Apple ID to deliver cron results and notifications to."
+    }
+   ]
+  },
+  "qqbot": {
+   "label": "QQ Bot",
+   "emoji": "🐧",
+   "token_var": "QQ_APP_ID",
+   "instructions": [
+    "1. Register a QQ Bot application at q.qq.com",
+    "2. Note your App ID and App Secret from the application page",
+    "3. Enable the required intents (C2C, Group, Guild messages)",
+    "4. Configure sandbox or publish the bot"
+   ],
+   "vars": [
+    {
+     "name": "QQ_APP_ID",
+     "prompt": "QQ Bot App ID",
+     "password": false,
+     "help": "Your QQ Bot App ID from q.qq.com."
+    },
+    {
+     "name": "QQ_CLIENT_SECRET",
+     "prompt": "QQ Bot App Secret",
+     "password": true,
+     "help": "Your QQ Bot App Secret from q.qq.com."
+    },
+    {
+     "name": "QQ_ALLOWED_USERS",
+     "prompt": "Allowed user OpenIDs (comma-separated, leave empty for open access)",
+     "password": false,
+     "help": "Optional — restrict DM access to specific user OpenIDs."
+    },
+    {
+     "name": "QQBOT_HOME_CHANNEL",
+     "prompt": "Home channel (user/group OpenID for cron delivery, or empty)",
+     "password": false,
+     "help": "OpenID to deliver cron results and notifications to."
+    }
+   ]
+  },
+  "yuanbao": {
+   "label": "Yuanbao",
+   "emoji": "💎",
+   "token_var": "YUANBAO_APP_ID",
+   "instructions": [
+    "1. Download the Yuanbao app from https://yuanbao.tencent.com/",
+    "2. In the app, go to PAI → My Bot and create a new bot",
+    "3. After the bot is created, copy the App ID and App Secret",
+    "4. Enter them below and Hermes will connect automatically over WebSocket"
+   ],
+   "vars": [
+    {
+     "name": "YUANBAO_APP_ID",
+     "prompt": "App ID",
+     "password": false,
+     "help": "The App ID from your Yuanbao IM Bot credentials."
+    },
+    {
+     "name": "YUANBAO_APP_SECRET",
+     "prompt": "App Secret",
+     "password": true,
+     "help": "The App Secret (used for HMAC signing) from your Yuanbao IM Bot."
+    }
+   ]
+  }
+ }
+}

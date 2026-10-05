@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}备份还原{% endblock %}
+{% block body %}
+<h2>备份还原</h2>
+<div class="card">
+<h3>创建备份</h3>
+<table style="margin-bottom:10px">
+<tr><th style="width:110px">类型</th><th>内容</th><th style="width:110px">操作</th></tr>
+<tr><td><b>普通备份</b><div style="color:var(--mut);font-size:12px">日常用这个</div></td>
+<td style="font-size:13px">配置+记忆+会话+技能+凭据；自动排除缓存/大文件（{{excludes|join(', ')}}）。秒级完成，体积小。</td>
+<td><form method="post" action="/backups/create"><input type="hidden" name="kind" value="normal"><button class="btn">普通备份</button></form></td></tr>
+<tr><td><b>全量备份</b><div style="color:var(--mut);font-size:12px">迁移/大改前用</div></td>
+<td style="font-size:13px">HERMES_HOME 完整打包，不排除任何东西（含缓存、日志、工具目录）。体积大、耗时长，还原后可完整复原一切。</td>
+<td><form method="post" action="/backups/create" onsubmit="this.querySelector('button').textContent='打包中…';this.querySelector('button').disabled=true"><input type="hidden" name="kind" value="full"><button class="btn warn">全量备份</button></form></td></tr>
+</table>
+<p style="color:var(--mut);font-size:12.5px">备份存于服务器 <code>~/hermes-console-backups/</code>，可下载留存。</p>
+</div>
+<div class="card">
+<h3>已有备份</h3>
+<table>
+<tr><th>文件</th><th style="width:60px">类型</th><th style="width:80px">大小</th><th style="width:140px">时间</th><th style="width:280px">操作</th></tr>
+{% for it in items %}
+<tr>
+<td class="mono">{{it.name}}</td>
+<td><span class="tag {{ 'gray' if it.kind=='普通' else ('g' if it.kind=='全量' else 'gray') }}">{{it.kind}}</span></td>
+<td>{{it.size}}</td><td>{{it.time}}</td>
+<td>
+<a class="btn ghost" href="/backups/download/{{it.name}}" style="padding:5px 10px">下载</a>
+<button class="btn warn" style="padding:5px 10px" onclick="restore('{{it.name}}')">还原</button>
+<form class="inline" method="post" action="/backups/delete/{{it.name}}" onsubmit="return confirm('删除该备份？')">
+<button class="btn danger" style="padding:5px 10px">删除</button></form>
+</td>
+</tr>
+{% else %}<tr><td colspan="5" style="color:var(--mut)">暂无备份</td></tr>{% endfor %}
+</table>
+</div>
+<form method="post" id="rform" style="display:none"><input type="hidden" name="confirm" id="rconfirm"></form>
+<script>
+function restore(name){
+ const v=prompt('还原会覆盖当前配置并重启Gateway！\n还原前会自动再备份一次当前状态。\n确认请输入 RESTORE（全大写）：');
+ if(v==='RESTORE'){const f=document.getElementById('rform');f.action='/backups/restore/'+name;document.getElementById('rconfirm').value='RESTORE';f.submit();}
+ else if(v!==null){alert('输入不匹配，已取消');}
+}
+</script>
+{% endblock %}

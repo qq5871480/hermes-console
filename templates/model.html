@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}模型设置{% endblock %}
+{% block body %}
+<h2>模型设置</h2>
+<div class="card">
+<h3>当前生效配置</h3>
+<table>
+<tr><td style="width:140px;color:var(--mut)">provider</td><td class="mono">{{cur.get('provider','（未设）')}}</td></tr>
+<tr><td style="color:var(--mut)">default model</td><td class="mono">{{cur.get('default','（未设）')}}</td></tr>
+<tr><td style="color:var(--mut)">base_url</td><td class="mono">{{cur.get('base_url','（默认）')}}</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h3>已配置模型</h3>
+{% if models %}
+<table>
+<tr><th style="width:70px"></th><th>服务商</th><th>模型名</th><th>Base URL</th><th style="width:230px">操作</th></tr>
+{% for m2 in models %}
+<tr>
+<td>{% if m2.is_current %}<span class="tag g">当前</span>{% endif %}</td>
+<td class="mono">{{m2.provider}}</td>
+<td class="mono">{{m2.model_name}}</td>
+<td class="mono" style="font-size:11.5px;color:var(--mut)">{{m2.base_url or '官方默认'}}</td>
+<td>
+{% if not m2.is_current %}<form class="inline" method="post" action="/model/setcurrent/{{m2.id}}"><button class="btn" style="padding:4px 10px;font-size:12.5px">设为当前</button></form>{% endif %}
+<form class="inline" method="post" action="/model/delete/{{m2.id}}" onsubmit="return confirm('删除该模型记录？（不影响已存密钥）')"><button class="btn danger" style="padding:4px 10px;font-size:12.5px">删除</button></form>
+</td>
+</tr>
+{% endfor %}
+</table>
+<p style="color:var(--mut);font-size:12px">「设为当前」=改 config.yaml 的 model 段并立即记录；对话生效需到「会话通道」页重启 Gateway。密钥状态不在此页显示。</p>
+{% else %}
+<p style="color:var(--mut)">还没有保存过模型。用下方表单配置后会自动记录到这里。</p>
+{% endif %}
+</div>
+
+<div class="card">
+<h3>设置模型</h3>
+<form method="post" id="mform">
+<p>① 选择服务商（国内）
+<select name="provider" id="provider" required onchange="onProv()">
+<optgroup label="—— 订阅版（包月固定价）——">
+{% for k,p in plist if p.group=='sub' %}<option value="{{k}}"{% if cur.get('provider')==k %} selected{% endif %}>{{p.cn_name}}{% if cur.get('provider')==k %} ✓当前{% endif %}</option>{% endfor %}
+</optgroup>
+<optgroup label="—— 普通版（按量付费API）——">
+{% for k,p in plist if p.group=='api' %}<option value="{{k}}"{% if cur.get('provider')==k %} selected{% endif %}>{{p.cn_name}}{% if cur.get('provider')==k %} ✓当前{% endif %}</option>{% endfor %}
+</optgroup>
+<optgroup label="—— 本地部署 ——">
+{% for k,p in plist if p.group=='local' %}<option value="{{k}}"{% if cur.get('provider')==k %} selected{% endif %}>{{p.cn_name}}</option>{% endfor %}
+</optgroup>
+<optgroup label="—— 自定义 ——">
+<option value="custom"{% if cur.get('provider')=='custom' %} selected{% endif %}>自定义（任何兼容端点）</option>
+</optgroup>
+</select></p>
+<p style="color:var(--mut);font-size:12.5px;margin:4px 0 12px" id="provhint"></p>
+<p id="cname_p" style="display:none">服务商名称（自定义用，英文，如 myproxy）
+<input name="custom_name" id="custom_name" placeholder="myproxy"></p>
+<p>② API Key　<span class="tag gray" id="keyhint"></span>
+<input name="api_key" id="api_key" type="password" placeholder="先粘贴密钥（读取可用模型要用）；已存过可留空沿用" autocomplete="off"></p>
+<p>③ 选择模型　<button class="btn ghost" type="button" style="padding:4px 12px;font-size:12.5px" onclick="loadModels()">📥 读取可用模型</button>　<span id="mlhint" style="color:var(--mut);font-size:12px"></span>
+<input name="model_name" id="model_name" list="modellist" placeholder="如 deepseek-chat / glm-4.6 / qwen3-max；也可点上方按钮拉取列表后下拉选择" required value="{{cur.get('default','')}}">
+<datalist id="modellist"></datalist></p>
+<p>④ Base URL（选国内服务商自动带出官方地址，一般不用动）
+<input name="base_url" id="base_url" placeholder=""></p>
+<p class="row">
+<button class="btn" type="submit">保存并生效</button>
+<button class="btn ghost" type="button" onclick="testModel()">连通性测试</button>
+</p>
+</form>
+<div id="testout" style="margin-top:10px"></div>
+</div>
+<script>
+const REG={{ reg|tojson }};
+function onProv(){
+ const k=document.getElementById('provider').value, p=REG[k]||{};
+ const isCustom=(k==='custom');
+ document.getElementById('cname_p').style.display=isCustom?'block':'none';
+ document.getElementById('model_name').required=true;
+ document.getElementById('base_url').required=isCustom;
+ const env=(p.env_vars&&p.env_vars[0])||'';
+ document.getElementById('keyhint').textContent=isCustom?'密钥将存入 CUSTOM_<名称>_API_KEY':(env?('密钥将存入 '+env):'');
+ document.getElementById('provhint').textContent=isCustom?'填任何 OpenAI/Anthropic 兼容端点（中转站、私有化 vLLM、Ollama 等），写入 custom_providers':(p.base_url?('官方地址：'+p.base_url):'');
+ document.getElementById('base_url').placeholder=isCustom?'https://your-endpoint/v1（必填）':(p.base_url||'');
+ if(!isCustom){document.getElementById('base_url').value=p.base_url||'';}
+}
+onProv();
+function loadModels(){
+ const d=new FormData(document.getElementById('mform'));
+ const h=document.getElementById('mlhint');
+ h.textContent='读取中…（真实请求服务商 /models 接口）';
+ document.getElementById('modellist').innerHTML='';
+ fetch('/model/models',{method:'POST',body:d}).then(r=>r.json()).then(j=>{
+   if(j.ok){
+     h.textContent='✓ 拉到 '+j.models.length+' 个可用模型，点输入框下拉选择：';
+     toSelect(j.models);
+   }else{
+     h.textContent='';
+     alert('读取失败：'+j.error);
+   }
+ }).catch(e=>{h.textContent='';alert('读取失败：'+e);});
+}
+// 把模型输入框本身换成下拉select（保留手动输入选项）
+function toSelect(models){
+ const inp=document.getElementById('model_name');
+ if(inp.tagName==='SELECT'){ // 已是select，刷新选项
+   refreshSel(inp,models); return;
+ }
+ const sel=document.createElement('select');
+ sel.name='model_name'; sel.id='model_name'; sel.required=true;
+ inp.parentNode.replaceChild(sel,inp);
+ refreshSel(sel,models);
+}
+function refreshSel(sel,models){
+ const cur=sel.value||'';
+ sel.innerHTML='<option value="">— 请选择模型（'+models.length+'个可用）—</option>'
+  +models.map(m=>'<option value="'+m+'">'+m+'</option>').join('')
+  +'<option value="__manual">✏️ 手动输入其他模型名…</option>';
+ if(models.indexOf(cur)>=0) sel.value=cur;
+ sel.onchange=function(){
+   if(this.value==='__manual'){
+     const inp=document.createElement('input');
+     inp.name='model_name'; inp.id='model_name'; inp.required=true;
+     inp.placeholder='手动输入模型名';
+     this.parentNode.replaceChild(inp,this); inp.focus();
+   }
+ };
+}
+function testModel(){
+ const d=new FormData(document.getElementById('mform'));
+ const out=document.getElementById('testout');
+ out.innerHTML='<span class="tag gray">测试中…真实调用一次API</span>';
+ fetch('/model/test',{method:'POST',body:d}).then(r=>r.text()).then(t=>{
+   out.innerHTML='<div class="flash '+(t.indexOf('成功')>=0?'ok':'err')+'">'+t+'</div>';
+ });
+}
+</script>
+{% endblock %}

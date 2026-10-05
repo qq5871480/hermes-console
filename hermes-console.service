@@ -1,0 +1,25 @@
+# Hermes Console systemd 服务模板
+# 安装：按需改路径/用户 → sudo cp hermes-console.service /etc/systemd/system/ →
+#   把 __GENERATE__ 换成 `openssl rand -hex 32` 的输出 → sudo systemctl daemon-reload →
+#   sudo systemctl enable --now hermes-console
+[Unit]
+Description=Hermes Console - Web management UI for Hermes Agent
+After=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+Environment=HERMES_HOME=/home/YOUR_USER/.hermes
+Environment=CONSOLE_BACKUP_DIR=/home/YOUR_USER/hermes-console-backups
+Environment=CONSOLE_GATEWAY_SERVICE=hermes-gateway
+Environment=CONSOLE_SECRET_KEY=***
+# 可选：Environment=CONSOLE_HTTP_PROXY=http://127.0.0.1:8118
+WorkingDirectory=/opt/hermes-console
+ExecStart=/opt/hermes-console/venv/bin/gunicorn -w 2 --timeout 300 -b 0.0.0.0:8787 app:app
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#131f33">
+<title>{% block title %}Hermes Console{% endblock %}</title>
+<style>
+:root{
+  --ink:#131f33;        /* 侧栏墨蓝 */
+  --ink2:#1b2b47;       /* 侧栏hover */
+  --bg:#f4f5f7;         /* 页面底 */
+  --card:#fff;
+  --line:#e4e7ec;       /* 边框 */
+  --pri:#1d4ed8;        /* 主操作蓝 */
+  --pri-d:#1e40af;
+  --acc:#e8a33d;        /* 琥珀点缀：当前项/焦点环 */
+  --err:#c93a32;
+  --ok:#1f8a5f;
+  --warn:#b45309;
+  --txt:#1a2231;
+  --mut:#697586;
+}
+*{box-sizing:border-box}
+html{color-scheme:light}
+body{margin:0;font:14px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt)}
+
+/* ===== 布局：侧栏 + 内容 ===== */
+.layout{display:flex;min-height:100vh}
+aside{width:208px;background:var(--ink);color:#c6d0e0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;flex-shrink:0}
+aside .logo{padding:20px 18px 16px;color:#fff;font-size:16px;font-weight:700;letter-spacing:.3px;border-bottom:1px solid rgba(255,255,255,.08)}
+aside .logo .mark{color:var(--acc);margin-right:6px}
+aside nav{flex:1;padding:10px 0;overflow-y:auto}
+aside nav a{display:flex;align-items:center;gap:10px;padding:10px 18px;color:#c6d0e0;text-decoration:none;font-size:14px;border-left:3px solid transparent;transition:background .15s,color .15s}
+aside nav a:hover{background:var(--ink2);color:#fff}
+aside nav a.on{background:var(--ink2);color:#fff;border-left-color:var(--acc);font-weight:600}
+aside nav a .ic{width:18px;text-align:center;font-size:15px}
+aside .foot{padding:12px 18px;border-top:1px solid rgba(255,255,255,.08);display:flex;gap:14px;font-size:13px}
+aside .foot a{color:#9fb0c8;text-decoration:none}
+aside .foot a:hover{color:#fff}
+aside .logo .foot-in{display:none}
+aside .foot a:focus-visible,aside nav a:focus-visible{outline:2px solid var(--acc);outline-offset:-2px;border-radius:4px}
+main{flex:1;min-width:0;max-width:1080px;margin:0 auto;padding:26px 28px 48px}
+
+/* ===== 标题 ===== */
+h2{margin:0 0 18px;font-size:19px;font-weight:700;letter-spacing:.2px}
+h2::after{content:"";display:block;width:28px;height:3px;background:var(--acc);border-radius:2px;margin-top:8px}
+h3{font-size:14.5px;margin:16px 0 10px;font-weight:600;color:var(--txt)}
+
+/* ===== 卡片：边框式 ===== */
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:16px;overflow-x:auto}
+.card>h3:first-child{margin-top:0}
+
+/* ===== 表格 ===== */
+table{width:100%;border-collapse:collapse}
+td,th{padding:9px 10px;border-bottom:1px solid #eef0f4;text-align:left;vertical-align:top}
+tr:last-child td{border-bottom:none}
+th{font-weight:600;font-size:12.5px;color:var(--mut);letter-spacing:.2px;background:#fafbfc}
+tbody tr:hover td{background:#f8fafd}
+
+/* ===== 表单 ===== */
+input,select,textarea{width:100%;padding:8px 11px;border:1px solid #d4dae2;border-radius:8px;font:inherit;background:#fff;color:var(--txt);transition:border-color .15s,box-shadow .15s}
+input:hover,select:hover,textarea:hover{border-color:#b9c2ce}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(29,78,216,.14)}
+label,p{margin:0 0 10px}
+
+/* ===== 按钮 ===== */
+.btn{display:inline-block;white-space:nowrap;background:var(--pri);color:#fff;border:1px solid transparent;border-radius:8px;padding:8px 18px;font-size:14px;font-weight:500;cursor:pointer;text-decoration:none;transition:background .15s,transform .05s;line-height:1.4}
+.btn:hover{background:var(--pri-d)}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.btn.warn{background:var(--warn)}.btn.warn:hover{background:#92400e}
+.btn.danger{background:var(--err)}.btn.danger:hover{background:#a92f28}
+.btn.ghost{background:#fff;color:var(--txt);border-color:#d4dae2}
+.btn.ghost:hover{background:#f3f5f8;border-color:#b9c2ce}
+.btn[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+
+/* ===== 提示/标签 ===== */
+.flash{padding:11px 14px;border-radius:8px;margin-bottom:14px;font-size:13.5px;border:1px solid transparent}
+.flash.ok{background:#eaf7f1;color:var(--ok);border-color:#c3e8d6}
+.flash.err{background:#fdedec;color:var(--err);border-color:#f5cfcc}
+.tag{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:500;line-height:1.7}
+.tag.g{background:#eaf7f1;color:var(--ok)}
+.tag.r{background:#fdedec;color:var(--err)}
+.tag.gray{background:#eef1f5;color:var(--mut)}
+
+/* ===== 数据 ===== */
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12.5px}
+pre{background:#101a2c;color:#cdd8ea;padding:14px 16px;border-radius:10px;overflow:auto;font-size:12.5px;max-height:420px;line-height:1.55;border:1px solid #22314e}
+
+/* ===== 统计卡 ===== */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:15px 17px;transition:box-shadow .15s}
+.stat:hover{box-shadow:0 2px 10px rgba(19,31,51,.07)}
+.stat .v{font-size:21px;font-weight:700;margin-top:3px;letter-spacing:.2px}
+.stat .k{color:var(--mut);font-size:12.5px;font-weight:500}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+form.inline{display:inline}
+a{color:var(--pri)}
+
+/* ===== 窄屏：侧栏变顶栏 ===== */
+@media(max-width:860px){
+  .layout{flex-direction:column}
+  aside{width:100%;height:auto;position:static;flex-direction:column;align-items:stretch}
+  aside .logo{border-bottom:none;padding:10px 14px 4px;display:flex;align-items:center}
+  aside .logo .foot-in{margin-left:auto;font-weight:400;font-size:12.5px;display:flex;gap:12px}
+  aside nav{display:flex;flex-wrap:nowrap;overflow-x:auto;padding:2px 6px 6px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  aside nav::-webkit-scrollbar{display:none}
+  aside nav a{border-left:none;border-bottom:3px solid transparent;padding:8px 11px;white-space:nowrap;font-size:13.5px;flex-shrink:0}
+  aside nav a.on{border-left:none;border-bottom-color:var(--acc)}
+  aside nav a .ic{display:none}
+  aside .foot{display:none}
+  main{padding:18px 14px 40px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+{% if session.get('user') %}
+<div class="layout">
+<aside>
+  <div class="logo"><span class="mark">◆</span>Hermes Console<span class="foot-in"><a href="/change-password">改密码</a><a href="/logout">退出</a></span></div>
+  <nav>
+    <a href="/" class="{{ 'on' if request.endpoint=='dashboard' }}"><span class="ic">▦</span>仪表盘</a>
+    <a href="/model" class="{{ 'on' if request.endpoint in ('model',) }}"><span class="ic">◈</span>模型设置</a>
+    <a href="/channels" class="{{ 'on' if request.endpoint=='channels' }}"><span class="ic">⇄</span>会话通道</a>
+    <a href="/skills" class="{{ 'on' if request.endpoint in ('skills','skills_view') }}"><span class="ic">✦</span>技能管理</a>
+    <a href="/backups" class="{{ 'on' if request.endpoint=='backups' }}"><span class="ic">⛁</span>备份还原</a>
+  </nav>
+  <div class="foot"><a href="/change-password">改密码</a><a href="/logout">退出</a></div>
+</aside>
+<main>
+{% else %}
+<main style="max-width:1080px;margin:0 auto;padding:26px 28px 48px">
+{% endif %}
+{% with msgs=get_flashed_messages(with_categories=true) %}{% for c,m in msgs %}<div class="flash {{c}}">{{m}}</div>{% endfor %}{% endwith %}
+{% block body %}{% endblock %}
+</main>
+{% if session.get('user') %}</div>{% endif %}
+</body></html>
