@@ -31,6 +31,17 @@ cd "$INSTALL_DIR"
 
 # 2. 装依赖
 echo "==> 创建虚拟环境并安装依赖…"
+# Ubuntu/Debian 常缺 python3-venv（ensurepip不可用），实际试建检测
+if ! python3 -m venv /tmp/.hc_venv_test >/dev/null 2>&1; then
+  rm -rf /tmp/.hc_venv_test
+  PYVER=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+  echo "  缺少 python3-venv，尝试自动安装（需要sudo）…"
+  if command -v apt-get >/dev/null && sudo -n true 2>/dev/null; then
+    sudo apt-get install -y -q "python${PYVER}-venv" >/dev/null 2>&1 || sudo apt-get install -y -q python3-venv >/dev/null 2>&1
+  fi
+  python3 -m venv /tmp/.hc_venv_test >/dev/null 2>&1 || { echo "✗ venv创建失败，请手动执行：sudo apt install python${PYVER}-venv"; exit 1; }
+fi
+rm -rf /tmp/.hc_venv_test
 [ -d venv ] || python3 -m venv venv
 ./venv/bin/pip install -q --upgrade pip
 # 国内pip慢可用：./venv/bin/pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
