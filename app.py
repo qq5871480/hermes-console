@@ -12,6 +12,7 @@ import hashlib
 import secrets
 import subprocess
 import tarfile
+import threading
 import time
 import shutil
 import zipfile
@@ -120,6 +121,12 @@ def init_db():
             is_current INTEGER DEFAULT 0, created REAL)''')
         conn.execute('''CREATE TABLE IF NOT EXISTS skill_zh(
             path TEXT PRIMARY KEY, desc_zh TEXT, src_hash TEXT)''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS chats(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT, session_id TEXT, created REAL, last_active REAL)''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS chat_msgs(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER, role TEXT, content TEXT, created REAL)''')
         conn.execute('''CREATE TABLE IF NOT EXISTS users(
             id INTEGER PRIMARY KEY, username TEXT UNIQUE, pw_hash TEXT,
             salt TEXT, must_change INTEGER DEFAULT 1,
@@ -339,6 +346,165 @@ def dashboard():
                            n_skills=n_skills, n_backups=len(list(BACKUP_DIR.glob('*.tar.gz'))),
                            model_default=m.get('default', '（未设置）'), model_provider=m.get('provider', '（未设置）'),
                            n_keys=n_keys)
+
+# ---------- 会话（桥接Hermes Agent本体：hermes -z + --resume） ----------
+_chat_locks = {}
+_chat_locks_guard = threading.Lock()
+
+def _chat_lock(chat_id):
+    with _chat_locks_guard:
+        if chat_id not in _chat_locks:
+            _chat_locks[chat_id] = threading.Lock()
+        return _chat_locks[chat_id]
+
+def _hermes_ask(prompt, session_id=None, timeout=600):
+    """调用 hermes CLI 单轮问答；session_id为空则新建会话。返回(回复, session_id)。"""
+    cmd = [str(HERMES_BIN), '-z', prompt, '--pass-session-id']
+    if session_id:
+        cmd += ['--resume', session_id]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                       cwd=str(Path.home()))
+    out = (r.stdout or '').strip()
+    err = (r.stderr or '').strip()
+    if r.returncode != 0:
+        raise RuntimeError((err or out or '未知错误')[:500])
+    sid = session_id
+    m = re.search(r'SESSION[_ ]ID[:\s]+([0-9a-zA-Z_-]+)', out)
+    if m:
+        sid = m.group(1)
+        out = re.sub(r'^.*SESSION[_ ]ID[:\s]+[0-9a-zA-Z_-]+.*$', '', out, flags=re.M).strip()
+    return out, sid
+
+def _list_session_ids(limit=8):
+    _, out = run(f'{HERMES_BIN} sessions list 2>/dev/null | head -{limit+2}', timeout=30)
+    ids = []
+    for line in out.strip().splitlines():
+        m = re.search(r'(\d{8}_\d{6}_[0-9a-f]{6})', line)
+        if m:
+            ids.append(m.group(1))
+    return ids
+
+def _new_session_id(before_ids):
+    """调用后与调用前的session列表对比，找出新建的那个（避免抓错别的会话）。"""
+    for sid in _list_session_ids():
+        if sid not in before_ids:
+            return sid
+    # 没有新增（--resume场景）：返回最近活跃的第一个
+    ids = _list_session_ids(1)
+    return ids[0] if ids else None
+
+@app.route('/chat')
+@login_required
+def chat():
+    with db() as conn:
+        chats = [dict(x) for x in conn.execute('SELECT id,title,last_active FROM chats ORDER BY last_active DESC LIMIT 50')]
+        cid = request.args.get('id', type=int)
+        chat = None; msgs = []
+        if cid:
+            row = conn.execute('SELECT * FROM chats WHERE id=?', (cid,)).fetchone()
+            if row:
+                chat = dict(row)
+                msgs = [dict(x) for x in conn.execute('SELECT role,content,created FROM chat_msgs WHERE chat_id=? ORDER BY id', (cid,))]
+    return render_template('chat.html', chats=chats, chat=chat, msgs=msgs)
+
+UPLOAD_DIR = HERMES_HOME / 'uploads' / 'console'
+UPLOAD_MAX = 50 * 1024 * 1024
+UPLOAD_EXT_OK = {'.jpg','.jpeg','.png','.gif','.webp','.bmp','.pdf','.txt','.md',
+                 '.doc','.docx','.xls','.xlsx','.ppt','.pptx','.csv','.json','.xml',
+                 '.zip','.log','.py','.sh','.yaml','.yml','.dwg','.dxf'}
+
+def _save_uploads(chat_id):
+    """保存本次请求附带的文件，返回[(文件名,绝对路径,大小)]；超限/类型不符抛ValueError。"""
+    saved = []
+    for f in request.files.getlist('files'):
+        if not f or not f.filename:
+            continue
+        raw = f.read()
+        if len(raw) > UPLOAD_MAX:
+            raise ValueError(f'{f.filename} 超过50M限制')
+        ext = Path(f.filename).suffix.lower()
+        if ext not in UPLOAD_EXT_OK:
+            raise ValueError(f'不支持的文件类型 {ext}（可传图片/文档/表格/PDF/压缩包等）')
+        d = UPLOAD_DIR / str(chat_id or 'new')
+        d.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r'[^\w.\u4e00-\u9fff-]', '_', Path(f.filename).name)[:80]
+        target = d / f'{int(time.time())}_{safe}'
+        target.write_bytes(raw)
+        os.chmod(target, 0o600)
+        saved.append((Path(f.filename).name, str(target), len(raw)))
+    return saved
+
+@app.route('/chat/send', methods=['POST'])
+@login_required
+def chat_send():
+    import json as _j
+    chat_id = request.form.get('chat_id', type=int)
+    text = (request.form.get('text') or '').strip()
+    has_files = any(f and f.filename for f in request.files.getlist('files'))
+    if (not text and not has_files) or len(text) > 8000:
+        return _j.dumps({'ok': False, 'error': '消息为空或超长（>8000字）'}), 400
+    now = time.time()
+    with db() as conn:
+        if chat_id:
+            row = conn.execute('SELECT session_id FROM chats WHERE id=?', (chat_id,)).fetchone()
+            if not row:
+                return _j.dumps({'ok': False, 'error': '会话不存在'}), 404
+            sid = row['session_id']
+        else:
+            sid = None
+            cur = conn.execute('INSERT INTO chats(title,session_id,created,last_active) VALUES(?,?,?,?)',
+                               (text[:30], None, now, now))
+            chat_id = cur.lastrowid
+        # 保存附件并把路径注入消息（Agent用read_file/vision工具自行处理）
+        att_lines = []
+        saved_files = []
+        try:
+            saved_files = _save_uploads(chat_id)
+            for fname, fpath, fsize in saved_files:
+                att_lines.append(f'[附件] {fname}（{fsize/1024:.0f}KB）已存到服务器路径：{fpath}')
+        except ValueError as ve:
+            return _j.dumps({'ok': False, 'error': str(ve), 'chat_id': chat_id}), 400
+        full_text = text
+        if att_lines:
+            has_img = any(Path(p_).suffix.lower() in ('.jpg','.jpeg','.png','.gif','.webp','.bmp')
+                          for _, p_, _ in saved_files)
+            hint = '（附件含图片，请用视觉工具查看图片内容）' if has_img else ''
+            full_text = (text + '\n\n' if text else '') + '\n'.join(att_lines) + f'\n请处理以上附件。{hint}'
+        # 界面显示：原文+附件名（不显示服务器路径）；发给Agent：full_text
+        display = text
+        if saved_files:
+            display = (text + '\n' if text else '') + '\n'.join(f'📎 {fn}' for fn, _, _ in saved_files)
+        conn.execute('INSERT INTO chat_msgs(chat_id,role,content,created) VALUES(?,?,?,?)',
+                     (chat_id, 'user', display, now))
+    lock = _chat_lock(chat_id)
+    if not lock.acquire(blocking=False):
+        return _j.dumps({'ok': False, 'error': '上一条还在处理中，请稍候', 'chat_id': chat_id}), 409
+    try:
+        before_ids = set(_list_session_ids()) if not sid else set()
+        reply, new_sid = _hermes_ask(full_text, sid)
+        if not new_sid:
+            new_sid = _new_session_id(before_ids)
+        with db() as conn:
+            conn.execute('INSERT INTO chat_msgs(chat_id,role,content,created) VALUES(?,?,?,?)',
+                         (chat_id, 'assistant', reply, time.time()))
+            conn.execute('UPDATE chats SET session_id=?, last_active=? WHERE id=?',
+                         (new_sid or sid, time.time(), chat_id))
+        return _j.dumps({'ok': True, 'chat_id': chat_id, 'reply': reply})
+    except subprocess.TimeoutExpired:
+        return _j.dumps({'ok': False, 'error': 'Agent响应超时（10分钟），可能任务太重', 'chat_id': chat_id}), 504
+    except Exception as e:
+        return _j.dumps({'ok': False, 'error': f'调用失败：{str(e)[:300]}', 'chat_id': chat_id}), 500
+    finally:
+        lock.release()
+
+@app.route('/chat/delete/<int:cid>', methods=['POST'])
+@login_required
+def chat_delete(cid):
+    with db() as conn:
+        conn.execute('DELETE FROM chat_msgs WHERE chat_id=?', (cid,))
+        conn.execute('DELETE FROM chats WHERE id=?', (cid,))
+    flash('会话已删除（Hermes侧原始session记录保留）', 'ok')
+    return redirect(url_for('chat'))
 
 # ---------- 版本检查/更新 ----------
 UPDATE_STATE_FILE = Path(os.environ.get('CONSOLE_DB', str(APP_DIR / 'console.db'))).with_suffix('.update.json')
@@ -713,6 +879,7 @@ def model():
         return redirect(url_for('model'))
     with db() as conn:
         models = [dict(r) for r in conn.execute('SELECT * FROM models ORDER BY is_current DESC, created DESC')]
+    models += _scan_external_models(models, envd, cfg, plist)
     # provider id → 中文名映射，模板显示中文
     pnames = {k: p.get('cn_name') or p.get('name') or k for k, p in reg.items()}
     return render_template('model.html', cur=m, plist=plist, reg=reg, models=models, pnames=pnames)
@@ -810,6 +977,48 @@ def model_test():
     except Exception as e:
         return f'失败：{type(e).__name__} {str(e)[:200]}'
 
+def _scan_external_models(db_models, envd, cfg, plist):
+    """扫描外部配置（命令行/配置文件直接配的key），补进已配置模型列表。
+    判定：provider 的 env_vars 在 .env 里有值，且该 provider/key 不在控制台登记表中。"""
+    known_providers = {m.get('provider') for m in db_models}
+    known_keys = {m.get('key_env') for m in db_models if m.get('key_env')}
+    cur_prov = (cfg.get('model') or {}).get('provider', '')
+    cur_model = (cfg.get('model') or {}).get('default', '')
+    cur_url = (cfg.get('model') or {}).get('base_url', '')
+    extra = []
+    for k, info in plist:
+        if k == 'custom' or k in known_providers:
+            continue
+        keyname = ''
+        for ev in info.get('env_vars', []):
+            if envd.get(ev):
+                keyname = ev
+                break
+        if not keyname or keyname in known_keys:
+            continue
+        url = cur_url if k == cur_prov else (envd.get(info.get('base_url_env', ''), '') or info.get('base_url', ''))
+        extra.append({'id': None, 'provider': k,
+                      'model_name': cur_model if k == cur_prov else '',
+                      'base_url': url, 'key_env': keyname,
+                      'is_current': 1 if k == cur_prov else 0,
+                      'external': True})
+    # config.yaml custom_providers 里的外部自定义端点
+    for e in cfg.get('custom_providers') or []:
+        if not isinstance(e, dict):
+            continue
+        name = e.get('name', '')
+        if not name or name in known_providers:
+            continue
+        ke = e.get('key_env', '')
+        if ke and (not envd.get(ke) or ke in known_keys):
+            continue
+        extra.append({'id': None, 'provider': name,
+                      'model_name': e.get('model', '') or (cur_model if name == cur_prov else ''),
+                      'base_url': e.get('base_url', ''), 'key_env': ke,
+                      'is_current': 1 if name == cur_prov else 0,
+                      'external': True})
+    return extra
+
 def _record_model(provider, model_name, base_url, key_env):
     import time as _t
     with db() as conn:
@@ -824,6 +1033,43 @@ def _record_model(provider, model_name, base_url, key_env):
         conn.execute('UPDATE models SET is_current=0 WHERE id != ?', (cur['id'],))
 
 # ---------- 已配置模型管理 ----------
+@app.route('/model/del_external', methods=['POST'])
+@login_required
+def model_del_external():
+    """真删外部配置：从 .env 移除该provider的API密钥，custom_providers 同名条目一并移除。"""
+    provider = request.form.get('provider', '').strip()
+    key_env = request.form.get('key_env', '').strip()
+    if not provider:
+        flash('参数缺失', 'err')
+        return redirect(url_for('model'))
+    cfg = load_cfg()
+    envd, order = load_env()
+    plist, reg = provider_list()
+    info = reg.get(provider) or {}
+    targets = {key_env} if key_env else set()
+    targets |= set(info.get('env_vars') or [])
+    removed = [k for k in list(envd) if k in targets and envd.get(k)]
+    for k in removed:
+        del envd[k]
+    if removed:
+        order = [k for k in order if k in envd]
+        save_env(envd, order)
+    # custom_providers 同名条目
+    cps = cfg.get('custom_providers') or []
+    if isinstance(cps, list):
+        new_cps = [e for e in cps if not (isinstance(e, dict) and e.get('name') == provider)]
+        if len(new_cps) != len(cps):
+            cfg['custom_providers'] = new_cps
+            removed.append('custom_providers:' + provider)
+            save_cfg(cfg)
+    # 当前激活的正是它→强提醒
+    cur_prov = (cfg.get('model') or {}).get('provider', '')
+    if cur_prov == provider:
+        flash(f'已删除：{", ".join(removed) or "无匹配项"}。⚠️ config.yaml 当前仍指向该provider，请立即重新选择模型！', 'err')
+    else:
+        flash(f'已删除：{", ".join(removed) or "无匹配项"}（.env密钥已移除）', 'ok')
+    return redirect(url_for('model'))
+
 @app.route('/model/list')
 @login_required
 def model_list():
@@ -1137,10 +1383,24 @@ def backups_create():
     ts = time.strftime('%Y%m%d_%H%M%S')
     prefix = 'hermes_full' if kind == 'full' else 'hermes_backup'
     out = BACKUP_DIR / f'{prefix}_{ts}.tar.gz'
+    # 备份包自身永远排除：BACKUP_DIR若在HERMES_HOME内则跳过，
+    # 以及HERMES_HOME里任何 hermes_backup_*/hermes_full_*/pre_restore_* 的tar.gz
+    def _is_backup_pkg(path: Path):
+        try:
+            if BACKUP_DIR.resolve() in path.resolve().parents or path.resolve() == BACKUP_DIR.resolve():
+                return True
+        except OSError:
+            pass
+        n = path.name
+        return n.endswith('.tar.gz') and n.startswith(('hermes_backup_', 'hermes_full_', 'pre_restore_'))
+
     def flt(ti):
+        p_ = Path(ti.name)
+        if _is_backup_pkg(p_):
+            return None
         if kind == 'full':
             return ti
-        parts = Path(ti.name).parts
+        parts = p_.parts
         return None if (len(parts) > 1 and parts[1] in BACKUP_EXCLUDES) else ti
     try:
         with tarfile.open(out, 'w:gz') as tar:
@@ -1171,8 +1431,18 @@ def backups_restore(name):
     try:
         # 1. 还原前先给当前状态留一份保险备份
         pre = BACKUP_DIR / f'pre_restore_{time.strftime("%Y%m%d_%H%M%S")}.tar.gz'
+        def _flt_pre(ti):
+            pp = Path(ti.name)
+            try:
+                if BACKUP_DIR.resolve() in pp.resolve().parents:
+                    return None
+            except OSError:
+                pass
+            if pp.name.endswith('.tar.gz') and pp.name.startswith(('hermes_backup_', 'hermes_full_', 'pre_restore_')):
+                return None
+            return ti
         with tarfile.open(pre, 'w:gz') as tar:
-            tar.add(HERMES_HOME, arcname='.hermes')
+            tar.add(HERMES_HOME, arcname='.hermes', filter=_flt_pre)
         # 2. 停gateway
         gateway_ctl('stop')
         # 3. 解包覆盖

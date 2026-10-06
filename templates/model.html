@@ -18,13 +18,18 @@
 <tr><th style="width:70px"></th><th>服务商</th><th>模型名</th><th>Base URL</th><th style="width:230px">操作</th></tr>
 {% for m2 in models %}
 <tr>
-<td>{% if m2.is_current %}<span class="tag g">当前</span>{% endif %}</td>
+<td>{% if m2.is_current %}<span class="tag g">当前</span>{% endif %}{% if m2.external %} <span class="tag gray">外部配置</span>{% endif %}</td>
 <td>{{pnames.get(m2.provider, m2.provider)}}{% if pnames.get(m2.provider) %}<div class="mono" style="color:var(--mut);font-size:11px">{{m2.provider}}</div>{% endif %}</td>
-<td class="mono">{{m2.model_name}}</td>
+<td class="mono">{{m2.model_name or '（扫描到密钥，未指定模型）'}}</td>
 <td class="mono" style="font-size:11.5px;color:var(--mut)">{{m2.base_url or '官方默认'}}</td>
 <td>
-{% if not m2.is_current %}<form class="inline" method="post" action="/model/setcurrent/{{m2.id}}"><button class="btn" style="padding:4px 10px;font-size:12.5px">设为当前</button></form>{% endif %}
-<form class="inline" method="post" action="/model/delete/{{m2.id}}" onsubmit="return confirm('删除该模型记录？（不影响已存密钥）')"><button class="btn danger" style="padding:4px 10px;font-size:12.5px">删除</button></form>
+{% if m2.external %}
+<button class="btn" style="padding:4px 10px;font-size:12.5px;background:#c3cad6;color:#fff;cursor:not-allowed" disabled title="外部配置不支持在此切换，请用 hermes model">设为当前</button>
+<form class="inline" method="post" action="/model/del_external" onsubmit="return confirm('真删除该外部配置？\n将移除 .env 中的 {{m2.key_env}} 密钥及custom_providers同名条目，不可恢复！')">
+<input type="hidden" name="provider" value="{{m2.provider}}"><input type="hidden" name="key_env" value="{{m2.key_env or ''}}">
+<button class="btn danger" style="padding:4px 10px;font-size:12.5px">删除</button></form>
+{% else %}{% if not m2.is_current %}<form class="inline" method="post" action="/model/setcurrent/{{m2.id}}"><button class="btn" style="padding:4px 10px;font-size:12.5px">设为当前</button></form>{% endif %}
+<form class="inline" method="post" action="/model/delete/{{m2.id}}" onsubmit="return confirm('删除该模型记录？（不影响已存密钥）')"><button class="btn danger" style="padding:4px 10px;font-size:12.5px">删除</button></form>{% endif %}
 </td>
 </tr>
 {% endfor %}

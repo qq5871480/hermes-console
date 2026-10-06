@@ -10,7 +10,7 @@
 <td style="font-size:13px">配置+记忆+会话+技能+凭据；自动排除缓存/大文件（{{excludes|join(', ')}}）。秒级完成，体积小。</td>
 <td><form method="post" action="/backups/create"><input type="hidden" name="kind" value="normal"><button class="btn">普通备份</button></form></td></tr>
 <tr><td><b>全量备份</b><div style="color:var(--mut);font-size:12px">迁移/大改前用</div></td>
-<td style="font-size:13px">HERMES_HOME 完整打包，不排除任何东西（含缓存、日志、工具目录）。体积大、耗时长，还原后可完整复原一切。</td>
+<td style="font-size:13px">Hermes 整个文件夹（HERMES_HOME）完整打包，含缓存、日志、工具目录；仅排除备份包自身（tar.gz），避免套娃。体积大、耗时长，还原后可完整复原一切。</td>
 <td><form method="post" action="/backups/create" onsubmit="this.querySelector('button').textContent='打包中…';this.querySelector('button').disabled=true"><input type="hidden" name="kind" value="full"><button class="btn warn">全量备份</button></form></td></tr>
 </table>
 <p style="color:var(--mut);font-size:12.5px">备份存于服务器 <code>~/hermes-console-backups/</code>，可下载留存。</p>

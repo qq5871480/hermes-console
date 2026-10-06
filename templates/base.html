@@ -78,7 +78,7 @@ label,p{margin:0 0 10px}
 .flash{padding:11px 14px;border-radius:8px;margin-bottom:14px;font-size:13.5px;border:1px solid transparent}
 .flash.ok{background:#eaf7f1;color:var(--ok);border-color:#c3e8d6}
 .flash.err{background:#fdedec;color:var(--err);border-color:#f5cfcc}
-.tag{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:500;line-height:1.7}
+.tag{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:500;line-height:1.7;white-space:nowrap}
 .tag.g{background:#eaf7f1;color:var(--ok)}
 .tag.r{background:#fdedec;color:var(--err)}
 .tag.gray{background:#eef1f5;color:var(--mut)}
@@ -121,6 +121,7 @@ a{color:var(--pri)}
   <div class="logo"><span class="mark">◆</span>Hermes Console<span class="foot-in"><a href="/change-password">改密码</a><a href="/logout">退出</a></span></div>
   <nav>
     <a href="/" class="{{ 'on' if request.endpoint=='dashboard' }}"><span class="ic">▦</span>仪表盘</a>
+    <a href="/chat" class="{{ 'on' if request.endpoint=='chat' }}"><span class="ic">💬</span>会话</a>
     <a href="/model" class="{{ 'on' if request.endpoint in ('model',) }}"><span class="ic">◈</span>模型设置</a>
     <a href="/channels" class="{{ 'on' if request.endpoint=='channels' }}"><span class="ic">⇄</span>会话通道</a>
     <a href="/skills" class="{{ 'on' if request.endpoint in ('skills','skills_view') }}"><span class="ic">✦</span>技能管理</a>
