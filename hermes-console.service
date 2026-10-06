@@ -15,7 +15,7 @@ Environment=CONSOLE_GATEWAY_SERVICE=hermes-gateway
 Environment=CONSOLE_SECRET_KEY=***
 # 可选：Environment=CONSOLE_HTTP_PROXY=http://127.0.0.1:8118
 WorkingDirectory=/opt/hermes-console
-ExecStart=/opt/hermes-console/venv/bin/gunicorn -w 2 --timeout 300 -b 0.0.0.0:8787 app:app
+ExecStart=/opt/hermes-console/venv/bin/gunicorn -w 1 --threads 8 --timeout 700 -b 0.0.0.0:8787 app:app
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

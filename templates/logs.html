@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Gateway 日志{% endblock %}
+{% block body %}
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:nowrap;margin-bottom:14px">
+  <h2 style="margin:0;white-space:nowrap">📜 Gateway 日志</h2>
+  <span class="tag">{{ unit }}</span>
+  <div style="margin-left:auto;display:flex;flex-direction:row;flex-wrap:nowrap;gap:8px;align-items:center;white-space:nowrap;padding-top:14px">
+    <label for="logn" style="color:var(--mut);font-size:12.5px;white-space:nowrap">条数</label>
+    <select id="logn" onchange="reload()" style="width:88px;border:1px solid #d4dae2;border-radius:7px;padding:5px 8px;font-size:13px;white-space:nowrap">
+      <option value="200">200</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option>
+    </select>
+    <input id="logq" value="{{ q }}" placeholder="关键词过滤" style="width:130px;border:1px solid #d4dae2;border-radius:7px;padding:5px 8px;font-size:12.5px" onkeydown="if(event.key==='Enter')reload()">
+    <select id="loglevel" onchange="reload()" style="width:96px;border:1px solid #d4dae2;border-radius:7px;padding:5px 8px;font-size:12.5px">
+      <option value="">全部级别</option><option value="ERROR">仅错误</option><option value="ERROR,WARN">错误+警告</option><option value="INFO">仅常规</option>
+    </select>
+    <label style="display:flex;align-items:center;gap:4px;font-size:12.5px;color:var(--mut);white-space:nowrap"><input type="checkbox" id="autorefresh">自动刷新</label>
+    <button class="dh-mini" onclick="reload()" style="white-space:nowrap">🔄 刷新</button>
+    <button class="dh-mini" onclick="copyAll()" style="white-space:nowrap">📋 复制全部</button>
+    <button class="dh-mini dh-mini-pri" id="ai-btn" title="调用模型解读，占用token，不要频繁解读，慎用！" onclick="explainLogs()" style="white-space:nowrap">🔍 AI解读</button>
+  </div>
+</div>
+
+<div class="logbox" id="logbox">
+{% for lvl, ln in logs %}{% if lvl %}<div class="l {{ 'e' if lvl=='E' else 'w' }}">{{ ln }}</div>{% else %}<div class="l">{{ ln }}</div>{% endif %}{% endfor %}
+{% if not logs %}<div class="l" style="color:var(--mut)">（暂无日志）</div>{% endif %}
+</div>
+
+<style>
+.logbox{background:#0f172a;color:#d7e0ef;border-radius:10px;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.7;max-height:68vh;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.logbox .l{padding:1px 0}
+.logbox .e{color:#f87171}
+.logbox .w{color:#fbbf24}
+</style>
+
+<div id="aimask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99">
+<div style="max-width:640px;margin:8vh auto;background:#fff;border-radius:12px;padding:20px 22px;max-height:80vh;overflow:auto">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+<h3 style="margin:0">🔍 AI 日志解读</h3>
+<span style="color:var(--err);font-size:12px;font-weight:400">调用模型解读，占用token，不要频繁解读，慎用！</span>
+<button class="dh-mini" style="margin-left:auto" onclick="document.getElementById('aimask').style.display='none'">✕ 关闭</button>
+</div>
+<div id="aiout" style="font-size:13.5px;line-height:1.8;color:var(--txt);white-space:pre-wrap">正在让 Agent 分析日志…（约10-60秒）</div>
+</div>
+</div>
+
+<script>
+document.getElementById('logn').value = '{{ n }}';
+function explainLogs(){
+  document.getElementById('aimask').style.display='block';
+  document.getElementById('aiout').textContent='正在让 Agent 分析日志…（约10-60秒）';
+  const text = Array.from(document.querySelectorAll('#logbox .l')).map(e=>e.textContent).join('\n').slice(-8000);
+  fetch('/logs/explain',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({logs:text})})
+  .then(r=>r.json()).then(j=>{
+    document.getElementById('aiout').textContent = j.msg || (j.ok ? '（无输出）' : '解读失败');
+  }).catch(e=>{document.getElementById('aiout').textContent='解读失败：'+e;});
+}
+function reload(){
+  const n = document.getElementById('logn').value;
+  const q = encodeURIComponent(document.getElementById('logq').value || '');
+  const lv = document.getElementById('loglevel').value;
+  location.href = '/logs?n=' + n + '&q=' + q + '&level=' + lv;
+}
+// 恢复服务端回传的过滤条件
+document.getElementById('logq').value = '{{ q|default("", true) }}';
+document.getElementById('loglevel').value = '{{ level|default("", true) }}';
+// 自动刷新：10秒一次fetch更新内容区，不打断输入
+let arTimer = null;
+document.getElementById('autorefresh').addEventListener('change', function(){
+  if(this.checked){
+    arTimer = setInterval(async ()=>{
+      const box = document.getElementById('logbox');
+      const pos = box.scrollHeight - box.scrollTop < 40;
+      const q = encodeURIComponent(document.getElementById('logq').value || '');
+      const lv = document.getElementById('loglevel').value;
+      const n = document.getElementById('logn').value;
+      try{
+        const r = await fetch('/logs/api?n=' + n + '&q=' + q + '&level=' + lv);
+        const j = await r.json();
+        if(!j.ok) return;
+        box.innerHTML = j.lines.map(l=>{
+          const low = l.toLowerCase();
+          const cls = (low.includes(' error ')||low.includes('traceback'))?'e':(low.includes(' warn ')?'w':'');
+          return '<div class="l ' + cls + '">' + l.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>';
+        }).join('') || '<div class="l" style="color:#9aa6b8">（无匹配日志）</div>';
+        if(pos) box.scrollTop = box.scrollHeight;
+      }catch(e){}
+    }, 10000);
+  } else if(arTimer){ clearInterval(arTimer); arTimer = null; }
+});
+function copyAll(){
+  const t = Array.from(document.querySelectorAll('#logbox .l')).map(e=>e.textContent).join('\n');
+  navigator.clipboard.writeText(t).then(()=>alert('已复制 ' + t.split('\n').length + ' 行'));
+}
+// 自动滚到底部（最新日志）
+const box = document.getElementById('logbox');
+box.scrollTop = box.scrollHeight;
+</script>
+{% endblock %}

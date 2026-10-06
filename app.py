@@ -5,6 +5,8 @@
 设计目标：通用（HERMES_HOME环境变量驱动，可管理任何Hermes实例）、可开源。
 """
 import os
+import shlex
+import requests
 import re
 import io
 import sqlite3
@@ -20,7 +22,7 @@ from pathlib import Path
 from functools import wraps
 
 from flask import (Flask, request, session, redirect, url_for,
-                   render_template, flash, send_file, abort)
+                   render_template, flash, send_file, abort, jsonify)
 from ruamel.yaml import YAML
 
 # ---------- 配置（全部环境变量驱动，无硬编码个人信息） ----------
@@ -100,11 +102,23 @@ def registry():
     return reg
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('CONSOLE_SECRET_KEY') or secrets.token_hex(32)
+_SKF = APP_DIR / '.secret_key'
+if os.environ.get('CONSOLE_SECRET_KEY'):
+    app.secret_key = os.environ['CONSOLE_SECRET_KEY']
+elif _SKF.exists():
+    app.secret_key = _SKF.read_text().strip()
+else:
+    app.secret_key = secrets.token_hex(32)
+    try:
+        _SKF.write_text(app.secret_key)
+        os.chmod(_SKF, 0o600)
+    except OSError:
+        pass
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 技能zip上传上限100M
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 BACKUP_EXCLUDES = {'cache', 'audio_cache', 'tmp', 'backups', '__pycache__',
-                   'venv', 'node_modules', 'browser_data', 'image_cache', 'tools', 'logs'}
+                   'venv', 'node_modules', 'browser_data', 'image_cache', 'tools', 'logs', 'uploads'}
 
 # ---------- 数据库 ----------
 def db():
@@ -131,6 +145,22 @@ def init_db():
             id INTEGER PRIMARY KEY, username TEXT UNIQUE, pw_hash TEXT,
             salt TEXT, must_change INTEGER DEFAULT 1,
             login_fails INTEGER DEFAULT 0, locked_until REAL DEFAULT 0)''')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS cron_runs(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT, job_name TEXT, ts TEXT,
+            ok INTEGER, output TEXT, duration REAL)''')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS metrics(
+            ts INTEGER PRIMARY KEY, cpu REAL, mem REAL, load1 REAL)''')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS chat_tasks(
+            id TEXT PRIMARY KEY, chat_id INTEGER, status TEXT,
+            started REAL, output TEXT, session_id TEXT, error TEXT)''')
+
+        conn.execute('''CREATE TABLE IF NOT EXISTS instances(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT, home TEXT UNIQUE, note TEXT)''')
         if INIT_PASSWORD and not conn.execute('SELECT id FROM users WHERE username="admin"').fetchone():
             salt = secrets.token_hex(16)
             conn.execute('INSERT OR IGNORE INTO users(username,pw_hash,salt,must_change) VALUES(?,?,?,1)',
@@ -335,17 +365,976 @@ def change_password():
 def dashboard():
     rc, disk = run("df -h " + str(HERMES_HOME) + " | tail -1 | awk '{print $3\" / \"$2\" (\"$5\")\"}'")
     rc2, mem = run("free -b | awk '/Mem/{printf \"%.0f MB / %.1f GB\", $3/1048576, $2/1073741824}'")
+    # CPU负载+核数+运行时长
+    _, loadavg = run("cat /proc/loadavg | awk '{print $1, $2, $3}'")
+    _, ncpu_r = run("nproc")
+    try:
+        ncpu = int(ncpu_r.strip())
+    except ValueError:
+        ncpu = 1
+    # 线程数（逻辑核）+整机CPU占用率（proc/stat两次采样）
+    _, nthread_r = run("grep -c '^processor' /proc/cpuinfo")
+    try:
+        nthread = int(nthread_r.strip())
+    except ValueError:
+        nthread = ncpu
+    _, cpu_sample = run("cat /proc/stat | grep '^cpu ' | awk '{print $2+$3+$4, $5}' && sleep 0.5 && cat /proc/stat | grep '^cpu ' | awk '{print $2+$3+$4, $5}'", timeout=15)
+    cpu_pct = ''
+    try:
+        lines = [x for x in cpu_sample.strip().splitlines() if x.strip()]
+        if len(lines) == 2:
+            b1, i1 = (int(x) for x in lines[0].split())
+            b2, i2 = (int(x) for x in lines[1].split())
+            busy = b2 - b1
+            total = (b2 + i2) - (b1 + i1)
+            if total > 0:
+                cpu_pct = f'{busy*100//total}%'
+    except (ValueError, IndexError):
+        pass
+    _, uptime_s = run("uptime -p 2>/dev/null | sed 's/up //'")
+    # 中文格式化uptime
+    m2 = re.search(r'(\d+)\s*years?\s*', uptime_s)
+    m3 = re.search(r'(\d+)\s*months?\s*', uptime_s)
+    m4 = re.search(r'(\d+)\s*weeks?\s*', uptime_s)
+    m5 = re.search(r'(\d+)\s*days?\s*', uptime_s)
+    m6 = re.search(r'(\d+)\s*hours?\s*', uptime_s)
+    m7 = re.search(r'(\d+)\s*minutes?\s*', uptime_s)
+    uptime_cn = ''.join(filter(None, [
+        (m2.group(1) + '年') if m2 else '',
+        (m3.group(1) + '个月') if m3 else '',
+        (m4.group(1) + '周') if m4 else '',
+        (m5.group(1) + '天') if m5 else '',
+        (m6.group(1) + '小时') if m6 else '',
+        (m7.group(1) + '分钟') if m7 else '',
+    ])) or (uptime_s.strip() if uptime_s.strip() else '刚刚')
+    # 负载解析为占比
+    loads = []
+    try:
+        parts = loadavg.split()
+        loads = [float(x) for x in parts[:3]]
+    except (ValueError, IndexError):
+        pass
+    # 磁盘细分：总量/已用/百分比
+    _, disk_full = run("df -B1 " + str(HERMES_HOME) + " | tail -1 | awk '{print $2, $3, $5}'")
+    disk_total = disk_used = disk_pct = ''
+    try:
+        t, u, pc = disk_full.split()
+        disk_total = f'{int(t)/1073741824:.0f} GB'
+        disk_used = f'{int(u)/1073741824:.1f} GB'
+        disk_pct = pc
+    except (ValueError, IndexError):
+        pass
+    # 内存百分比
+    _, mem_full = run("free -b | awk '/Mem/{print $2, $3}'")
+    mem_pct = ''
+    try:
+        mt, mu = mem_full.split()
+        mem_pct = f'{int(mu)*100//int(mt)}%'
+    except (ValueError, IndexError):
+        pass
+    # SOUL字符
+    soul_chars = 0
+    try:
+        soul_chars = len((HERMES_HOME / 'SOUL.md').read_text(encoding='utf-8'))
+    except OSError:
+        pass
+    # Hermes安装目录大小
+    _, fw_size = run("du -sh " + str(Path.home() / 'hermes' / 'hermes-agent') + " 2>/dev/null | awk '{print $1}'")
+    # 最近会话时间
+    _, last_sess = run(f"{HERMES_BIN} sessions list 2>/dev/null | head -2 | tail -1", timeout=20)
     sdir = HERMES_HOME / 'skills'
     n_skills = len(list(sdir.rglob('SKILL.md'))) if sdir.exists() else 0
     cfg = load_cfg()
     m = cfg.get('model') or {}
     envd, _ = load_env()
     n_keys = sum(1 for k in envd if ('KEY' in k or 'TOKEN' in k) and envd.get(k))
+    # 定时任务
+    cron_jobs = _cron_jobs()
+    n_cron = len(cron_jobs)
+    cron_next = next((j for j in cron_jobs if j['next_run']), None)
+    # 会话数（控制台聊天+Hermes sessions）
+    with db() as conn:
+        n_chats = conn.execute('SELECT COUNT(*) FROM chats').fetchone()[0]
+    _, n_sessions = run(f'{HERMES_BIN} sessions list 2>/dev/null | grep -c "_" || echo 0', timeout=20)
+    # 最近备份
+    bks = sorted(BACKUP_DIR.glob('*.tar.gz'), key=lambda x: x.stat().st_mtime, reverse=True)
+    last_backup = bks[0].stat().st_mtime if bks else 0
+    last_backup_str = time.strftime('%m-%d %H:%M', time.localtime(last_backup)) if last_backup else '从未'
+    # 记忆占用
+    mem_mem = 0; mem_usr = 0
+    try:
+        mem_mem = (HERMES_HOME / 'memories' / 'MEMORY.md').stat().st_size
+    except OSError: pass
+    try:
+        mem_usr = (HERMES_HOME / 'memories' / 'USER.md').stat().st_size
+    except OSError: pass
+    mem_cfg = cfg.get('memory') or {}
+    # Gateway进程详情
+    gw_pid, gw_since = '', ''
+    _, gwinfo = run(f"systemctl show {shlex.quote(GATEWAY_SERVICE)} -p MainPID,ActiveEnterTimestamp --no-pager 2>/dev/null", timeout=15)
+    for line in gwinfo.splitlines():
+        if line.startswith('MainPID=') and line[8:] not in ('', '0'):
+            gw_pid = line[8:]
+        elif line.startswith('ActiveEnterTimestamp='):
+            gw_since = line[len('ActiveEnterTimestamp='):].strip()
     return render_template('dashboard.html', ver=hermes_version(), gw=gateway_status(),
                            disk=disk.strip(), mem=mem.strip(), home=str(HERMES_HOME),
                            n_skills=n_skills, n_backups=len(list(BACKUP_DIR.glob('*.tar.gz'))),
                            model_default=m.get('default', '（未设置）'), model_provider=m.get('provider', '（未设置）'),
-                           n_keys=n_keys)
+                           n_keys=n_keys, loads=loads, ncpu=ncpu, nthread=nthread, cpu_pct=cpu_pct, uptime_cn=uptime_cn,
+                           disk_total=disk_total, disk_used=disk_used, disk_pct=disk_pct, mem_pct=mem_pct,
+                           soul_chars=soul_chars, fw_size=fw_size.strip() or '—',
+                           n_cron=n_cron, cron_next=(cron_next['name'] + ' · ' + cron_next['next_run']) if cron_next else '无排期',
+                           n_chats=n_chats, n_sessions=(n_sessions or '0').strip(),
+                           last_backup=last_backup_str, n_backups_all=len(bks),
+                           mem_mem=mem_mem, mem_usr=mem_usr,
+                           mem_limit=(mem_cfg.get('memory_char_limit', 4400)),
+                           usr_limit=(mem_cfg.get('user_char_limit', 1375)),
+                           gw_pid=gw_pid, gw_since=gw_since)
+
+# ---------- 人格（SOUL.md） ----------
+SOUL_FILE = HERMES_HOME / 'SOUL.md'
+
+@app.route('/system/reboot', methods=['POST'])
+@login_required
+def system_reboot():
+    if (request.get_json(force=True, silent=True) or {}).get('confirm') != 'REBOOT':
+        return jsonify({'ok': False, 'msg': '确认词错误'})
+    rc, out = run('sudo -n reboot 2>&1', timeout=10)
+    if rc != 0:
+        return jsonify({'ok': False, 'msg': '重启指令失败：%s（检查sudo免密配置）' % (out or rc)[:200]})
+    return jsonify({'ok': True, 'msg': '重启指令已发出，机器约1-2分钟后恢复，页面会自动重连'})
+
+
+def _log_filter_lines(raw_lines, q, level):
+    """按关键词(q)与级别(level逗号分隔)过滤日志行，返回(级别标记, 行)列表。统一Python侧过滤。"""
+    lvls = {x.strip().upper() for x in (level or '').split(',') if x.strip()}
+    out = []
+    for ln in raw_lines:
+        low = ln.lower()
+        if ' error ' in low or 'traceback' in low:
+            lv = 'E'
+        elif ' warn ' in low or ' warning ' in low:
+            lv = 'W'
+        else:
+            lv = ''
+        if q and q.lower() not in ln.lower():
+            continue
+        if lvls:
+            want = ('ERROR' in lvls and lv == 'E') or ('WARN' in lvls and lv == 'W') or ('INFO' in lvls and lv == '')
+            if not want:
+                continue
+        out.append((lv, ln))
+    return out
+
+
+@app.route('/logs')
+@login_required
+
+
+def logs():
+    _, unit = run("systemctl --user list-units --type=service --no-legend 2>/dev/null | grep -E 'hermes-gateway|gateway' | awk '{print $1}' | head -1")
+    unit = unit.strip() or 'hermes-gateway'
+    try:
+        n = int(request.args.get('n', 200))
+    except ValueError:
+        n = 200
+    n = max(50, min(n, 2000))
+    q = request.args.get('q', '')
+    level = request.args.get('level', '')
+    _, out = run(f"journalctl --user -u {shlex.quote(unit)} -n {n} --no-pager -o short-iso 2>&1 | tail -n {n}")
+    if 'No journal files' in out or not out.strip() or 'No entries' in out:
+        _, out2 = run(f"journalctl -u {shlex.quote(unit)} -n {n} --no-pager -o short-iso 2>&1 | tail -n {n}")
+        out = out2 if out2.strip() and 'No entries' not in out2 and 'No journal' not in out2 else out
+    if 'No journal files' in out or not out.strip() or 'No entries' in out:
+        # 最终兜底：~/.hermes/logs/gateway.log
+        _, out2 = run(f"tail -n {n} {shlex.quote(str(HERMES_HOME))}/logs/gateway.log 2>/dev/null")
+        out = out2 if out2.strip() else out
+    lines = _log_filter_lines(out.splitlines(), q, level)
+    return render_template('logs.html', logs=lines, unit=unit, n=n, q=q, level=level)
+
+
+_RATE_LIMIT_RE = re.compile(r'rate-?limited|429|Too Many Requests', re.I)
+
+
+def _hermes_explain(prompt, timeout=170):
+    """一次性调用 hermes CLI 做日志解读。限流时等25秒自动重试一次，再失败给人话提示。"""
+    last_err = ''
+    for attempt in (1, 2):
+        try:
+            out, _sid = _hermes_ask(prompt, timeout=timeout)
+            out = (out or '').strip()
+            if out and _RATE_LIMIT_RE.search(out):
+                last_err = out
+                if attempt == 1:
+                    import time as _t
+                    _t.sleep(25)
+                    continue
+                return ('（模型限流中：当前模型请求太频繁，等一两分钟再点「AI解读」，'
+                        '或在「模型设置」切换到其他模型再试）')
+            return out or '（无输出）'
+        except subprocess.TimeoutExpired:
+            return '（超时：Agent处理超过%d秒，可稍后重试）' % timeout
+        except Exception as e:
+            last_err = str(e)
+            if attempt == 1 and _RATE_LIMIT_RE.search(last_err):
+                import time as _t
+                _t.sleep(25)
+                continue
+    return '（解读失败：%s……建议：等一两分钟再试，或在「模型设置」换一个模型）' % last_err[:200]
+
+
+_tidy_explain_lock = threading.Lock()
+
+
+@app.route('/logs/explain', methods=['POST'])
+@login_required
+def logs_explain():
+    if not _tidy_explain_lock.acquire(blocking=False):
+        return jsonify({'ok': False, 'msg': '已有一次解读在进行，请稍候'})
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        logs = (data.get('logs') or '')[-8000:]
+        if not logs.strip():
+            return jsonify({'ok': False, 'msg': '日志为空'})
+        prompt = ('你是一名运维助手。以下是Hermes Agent Gateway的最新日志。请用通俗中文向不懂技术'
+                  '的用户解释：1.整体运行是否正常 2.有没有错误或警告，分别是什么、严重吗、需要处理吗'
+                  ' 3.如果一切正常就一句话说明。直接给结论，别贴大段原文。\n\n日志内容：\n' + logs)
+        msg = _hermes_explain(prompt)
+        return jsonify({'ok': True, 'msg': msg})
+    finally:
+        _tidy_explain_lock.release()
+
+
+@app.route('/logs/api')
+@login_required
+def logs_api():
+    try:
+        n = int(request.args.get('n', 100))
+    except ValueError:
+        n = 100
+    n = max(20, min(n, 500))
+    _, unit = run("systemctl --user list-units --type=service --no-legend 2>/dev/null | grep -E 'hermes-gateway|gateway' | awk '{print $1}' | head -1")
+    unit = unit.strip() or 'hermes-gateway'
+    _, out = run(f"journalctl --user -u {shlex.quote(unit)} -n {n} --no-pager -o short-iso 2>&1 | tail -n {n}")
+    if 'No journal files' in out or not out.strip() or 'No entries' in out:
+        _, out2 = run(f"tail -n {n} {shlex.quote(str(HERMES_HOME))}/logs/gateway.log 2>/dev/null")
+        out = out2 if out2.strip() else out
+    q = request.args.get('q', '')
+    level = request.args.get('level', '')
+    lines = [ln for _lv, ln in _log_filter_lines(out.splitlines(), q, level)]
+    return jsonify({'ok': True, 'lines': lines})
+
+
+@app.route('/soul', methods=['POST'])
+@login_required
+def soul():
+    content = request.form.get('content', '')
+    if len(content) > 100000:
+        flash('内容过大（>100KB）', 'err')
+    else:
+        if SOUL_FILE.exists():
+            bak = SOUL_FILE.with_suffix(f'.md.bak-{time.strftime("%Y%m%d%H%M%S")}')
+            bak.write_bytes(SOUL_FILE.read_bytes())
+        SOUL_FILE.write_text(content, encoding='utf-8')
+        flash('SOUL.md 已保存（旧版已备份；下个新会话生效）', 'ok')
+    return redirect(url_for('persona'))
+
+@app.route('/persona', methods=['GET', 'POST'])
+@login_required
+def persona():
+    if request.method == 'POST':
+        act = request.form.get('act', '')
+        if act == 'limits':
+            try:
+                ml = int(request.form.get('mem_limit', ''))
+                ul = int(request.form.get('usr_limit', ''))
+                if not (200 <= ml <= 50000) or not (100 <= ul <= 20000):
+                    raise ValueError
+            except ValueError:
+                flash('限制值须为正整数（MEMORY 200~50000，USER 100~20000）', 'err')
+                return redirect(url_for('persona'))
+            cfg = load_cfg()
+            cfg.setdefault('memory', {})
+            cfg['memory']['memory_char_limit'] = ml
+            cfg['memory']['user_char_limit'] = ul
+            save_cfg(cfg)
+            flash(f'记忆容量已更新：MEMORY {ml} / USER {ul} 字符（Gateway重启后生效，去「会话通道」页）', 'ok')
+            return redirect(url_for('persona'))
+    soul_content = SOUL_FILE.read_text(encoding='utf-8') if SOUL_FILE.exists() else ''
+    baks = sorted(SOUL_FILE.parent.glob('SOUL.md.bak-*'), reverse=True)[:5]
+    mem, mem_chars, _ = _mem_entries('MEMORY.md')
+    usr, usr_chars, _ = _mem_entries('USER.md')
+    cfg = load_cfg()
+    mc = (cfg.get('memory') or {})
+    return render_template('persona.html', content=soul_content, baks=[b.name for b in baks],
+                           mem=mem, usr=usr, mem_chars=mem_chars, usr_chars=usr_chars,
+                           mem_limit=mc.get('memory_char_limit', 4400),
+                           usr_limit=mc.get('user_char_limit', 1375),
+                           defaults={'mem': 2200, 'usr': 1375})
+
+@app.route('/memory')
+@login_required
+def memory_page_redirect():
+    return redirect(url_for('persona'))
+
+# ---------- 记忆库管理 ----------
+MEM_DIR = HERMES_HOME / 'memories'
+
+def _mem_entries(fname):
+    f = MEM_DIR / fname
+    if not f.exists():
+        return [], 0, 0
+    text = f.read_text(encoding='utf-8')
+    entries = [e.strip() for e in text.split('\n§\n')]
+    entries = [e for e in entries if e]
+    return entries, len(text), f.stat().st_size
+
+
+
+_tidy_locks = {}
+_tidy_locks_guard = threading.Lock()
+
+def _tidy_lock(key):
+    with _tidy_locks_guard:
+        if key not in _tidy_locks:
+            _tidy_locks[key] = threading.Lock()
+        return _tidy_locks[key]
+
+TIDY_PROMPT = """你是记忆库整理员。下面是 {fname} 的当前内容（各条用单独一行 § 分隔）。
+
+请提炼整理：
+1. 删除已过时、被取代、重复表达的条目
+2. 合并同类项，精炼措辞，保留所有仍然有效的事实、规则、口径
+3. 不确定是否过时的条目一律保留
+4. 输出格式：只输出整理后的全文，各条之间用单独一行 § 分隔，不要任何解释、前言、代码块标记
+
+原文：
+{content}"""
+
+@app.route('/memory/tidy', methods=['POST'])
+@login_required
+def memory_tidy():
+    """调用本机Hermes Agent提炼整理指定文件，返回对比数据（不写盘，等用户确认）。"""
+    import json as _j
+    which = request.form.get('which', '')
+    fname = {'mem': 'MEMORY.md', 'usr': 'USER.md'}.get(which)
+    if not fname:
+        return _j.dumps({'ok': False, 'error': '参数错误'}), 400
+    f = MEM_DIR / fname
+    if not f.exists():
+        return _j.dumps({'ok': False, 'error': f'{fname} 不存在'}), 404
+    key = 'tidy_' + which
+    lock = _tidy_lock(key)
+    if not lock.acquire(blocking=False):
+        return _j.dumps({'ok': False, 'error': '该文件正在整理中，请稍候'}), 409
+    try:
+        text = f.read_text(encoding='utf-8')
+        entries = [e for e in (x.strip() for x in text.split('\n§\n')) if e]
+        prompt = TIDY_PROMPT.format(fname=fname, content=text[:20000])
+        reply, _sid = _hermes_ask(prompt, timeout=300)
+        new_text = reply.strip()
+        # 去掉可能的代码块包裹
+        if new_text.startswith('```'):
+            new_text = re.sub(r'^```[a-z]*\n?', '', new_text)
+            new_text = re.sub(r'\n?```$', '', new_text).strip()
+        if not new_text or '§' not in new_text:
+            return _j.dumps({'ok': False, 'error': 'Agent返回格式异常，已放弃（原文未动）。返回内容：' + reply[:200]}), 200
+        new_entries = [e for e in (x.strip() for x in new_text.split('\n§\n')) if e]
+        return _j.dumps({'ok': True, 'old_n': len(entries), 'new_n': len(new_entries),
+                         'old_chars': len(text), 'new_chars': len(new_text),
+                         'new_text': new_text})
+    except subprocess.TimeoutExpired:
+        return _j.dumps({'ok': False, 'error': '整理超时（5分钟），已放弃，原文未动'}), 200
+    except Exception as e:
+        return _j.dumps({'ok': False, 'error': f'整理失败：{str(e)[:200]}（原文未动）'}), 200
+    finally:
+        lock.release()
+
+@app.route('/memory/tidy_apply', methods=['POST'])
+@login_required
+def memory_tidy_apply():
+    """用户确认后把整理结果写盘（先备份）。"""
+    import json as _j
+    which = request.form.get('which', '')
+    content = request.form.get('content', '')
+    fname = {'mem': 'MEMORY.md', 'usr': 'USER.md'}.get(which)
+    if not fname or not content or len(content) > 50000:
+        return _j.dumps({'ok': False, 'error': '参数错误'}), 400
+    f = MEM_DIR / fname
+    if f.exists():
+        bak = f.with_suffix(f'.md.bak-{time.strftime("%Y%m%d%H%M%S")}')
+        bak.write_text(f.read_text(encoding='utf-8'), encoding='utf-8')
+    f.write_text(content + '\n', encoding='utf-8')
+    return _j.dumps({'ok': True})
+
+@app.route('/memory/delete', methods=['POST'])
+@login_required
+def memory_delete():
+    which = request.form.get('which', '')
+    idx = request.form.get('idx', type=int)
+    fname = {'mem': 'MEMORY.md', 'usr': 'USER.md'}.get(which)
+    if not fname or idx is None:
+        flash('参数错误', 'err')
+        return redirect(url_for('persona'))
+    f = MEM_DIR / fname
+    if not f.exists():
+        flash('文件不存在', 'err')
+        return redirect(url_for('persona'))
+    text = f.read_text(encoding='utf-8')
+    entries = [e for e in (x.strip() for x in text.split('\n§\n')) if e]
+    if idx < 0 or idx >= len(entries):
+        flash('编号越界', 'err')
+        return redirect(url_for('persona'))
+    removed = entries.pop(idx)
+    bak = f.with_suffix(f'.md.bak-{time.strftime("%Y%m%d%H%M%S")}')
+    bak.write_text(text, encoding='utf-8')
+    f.write_text('\n§\n'.join(entries) + ('\n' if entries else ''), encoding='utf-8')
+    flash(f'已删除 {fname} 第{idx+1}条（原文备份 {bak.name}）：{removed[:40]}…', 'ok')
+    return redirect(url_for('persona'))
+
+@app.route('/memory/edit', methods=['POST'])
+@login_required
+def memory_edit():
+    which = request.form.get('which', '')
+    content = request.form.get('content', '')
+    fname = {'mem': 'MEMORY.md', 'usr': 'USER.md'}.get(which)
+    if not fname or len(content) > 50000:
+        flash('参数错误或内容过大', 'err')
+        return redirect(url_for('persona'))
+    f = MEM_DIR / fname
+    if f.exists():
+        bak = f.with_suffix(f'.md.bak-{time.strftime("%Y%m%d%H%M%S")}')
+        bak.write_text(f.read_text(encoding='utf-8'), encoding='utf-8')
+    f.write_text(content, encoding='utf-8')
+    flash(f'{fname} 已保存（旧版已备份；§ 分隔各条）', 'ok')
+    return redirect(url_for('persona'))
+
+# ---------- 模型分工 ----------
+@app.route('/roles', methods=['GET', 'POST'])
+@login_required
+def roles():
+    cfg = load_cfg()
+    if request.method == 'POST':
+        act = request.form.get('act', '')
+        sel = request.form.get('model_sel', '').strip()
+        if '::' in sel:
+            prov, model = sel.split('::', 1)
+        else:
+            prov = model = ''
+        if not model:
+            flash('未选择模型（保持原样）', 'err')
+            return redirect(url_for('roles'))
+        if act == 'main':
+            cfg.setdefault('model', {})
+            if model:
+                cfg['model']['default'] = model
+            if prov:
+                cfg['model']['provider'] = prov
+            save_cfg(cfg)
+            flash('主对话模型已更新（Gateway重启后生效，去「会话通道」页重启）', 'ok')
+        elif act == 'delegation':
+            cfg.setdefault('delegation', {})
+            if prov:
+                cfg['delegation']['provider'] = prov
+            if model:
+                cfg['delegation']['model'] = model
+            save_cfg(cfg)
+            flash('子agent执行模型已更新（新任务生效，无需重启）', 'ok')
+        elif act == 'fast':
+            cfg.setdefault('model', {})
+            if model:
+                cfg['model']['fast'] = model
+            else:
+                cfg['model'].pop('fast', None)
+            save_cfg(cfg)
+            flash('快速小活模型已更新' if model else '快速小活模型已清除（跟随主模型）', 'ok')
+        return redirect(url_for('roles'))
+    m = cfg.get('model') or {}
+    d = cfg.get('delegation') or {}
+    plist, reg = provider_list()
+    pnames = {k: p.get('cn_name') or p.get('name') or k for k, p in reg.items()}
+    # 候选模型=控制台登记表+外部扫描（显示为"模型名（服务商中文）"）
+    envd, _ = load_env()
+    with db() as conn:
+        db_models = [dict(r) for r in conn.execute('SELECT * FROM models ORDER BY is_current DESC, created DESC')]
+    cands = []
+    seen = set()
+    for mm in db_models:
+        if mm['model_name'] and mm['model_name'] not in seen:
+            seen.add(mm['model_name'])
+            cands.append({'model': mm['model_name'], 'prov': mm['provider'],
+                          'label': f"{mm['model_name']}（{pnames.get(mm['provider'], mm['provider'])}）"})
+    for mm in _scan_external_models(db_models, envd, cfg, plist):
+        pn = pnames.get(mm['provider'], mm['provider'])
+        cur_m = m.get('default', '') if mm['provider'] == m.get('provider') else ''
+        if cur_m and cur_m not in seen:
+            seen.add(cur_m)
+            cands.append({'model': cur_m, 'prov': mm['provider'], 'label': f'{cur_m}（{pn}）'})
+    return render_template('roles.html', cur_main=m.get('default', ''), cur_main_prov=m.get('provider', ''),
+                           cur_del_model=d.get('model', ''), cur_del_prov=d.get('provider', ''),
+                           cur_fast=m.get('fast', ''), pnames=pnames, cands=cands)
+
+# ---------- 定时任务（cron） ----------
+CRON_FILE = HERMES_HOME / 'cron' / 'jobs.json'
+
+def _cron_jobs():
+    """读jobs.json（只读展示）；Gateway运行中，写操作一律走CLI避免抢锁。"""
+    import json as _j
+    try:
+        data = _j.loads(CRON_FILE.read_text(encoding='utf-8'))
+        jobs = data.get('jobs', data) if isinstance(data, dict) else data
+    except Exception:
+        return []
+    out = []
+    for jb in jobs:
+        state = jb.get('state') or ('paused' if jb.get('paused_at') else 'active')
+        out.append({
+            'id': jb.get('id', ''),
+            'name': jb.get('name') or (jb.get('prompt') or '')[:30],
+            'schedule': jb.get('schedule_display') or '',
+            'prompt': jb.get('prompt') or '',
+            'deliver': jb.get('deliver') or '',
+            'model': jb.get('model') or '',
+            'provider': jb.get('provider') or '',
+            'state': state,
+            'next_run': (jb.get('next_run_at') or '')[:16].replace('T', ' '),
+            'last_run': (jb.get('last_run_at') or '')[:16].replace('T', ' '),
+            'last_status': jb.get('last_status') or '',
+        })
+    out.sort(key=lambda x: x['next_run'] or '9999')
+    return out
+
+def _cron_status():
+    rc, out = run(f'{HERMES_BIN} cron status 2>/dev/null', timeout=30)
+    running = 'running' in out.lower()
+    hb = ''
+    m = re.search(r'heartbeat[:\s]+([^\n]+)', out, re.I)
+    if m:
+        hb = m.group(1).strip()
+    return {'running': running, 'detail': out.strip()[:300], 'heartbeat': hb}
+
+@app.route('/cron')
+@login_required
+def cron():
+    return render_template('cron.html', jobs=_cron_jobs(), status=_cron_status())
+
+@app.route('/cron/create', methods=['POST'])
+@login_required
+def cron_create():
+    name = (request.form.get('name') or '').strip()
+    prompt = (request.form.get('prompt') or '').strip()
+    deliver = (request.form.get('deliver') or '').strip()
+    smode = request.form.get('smode', 'daily')   # daily/weekly/interval/once/custom
+    if not prompt:
+        flash('任务内容必填', 'err')
+        return redirect(url_for('cron'))
+    once = False
+    try:
+        if smode == 'daily':
+            hh, mm = (request.form.get('at_time') or '07:00').split(':')
+            schedule = f'{int(mm)} {int(hh)} * * *'
+        elif smode == 'weekly':
+            hh, mm = (request.form.get('at_time') or '07:00').split(':')
+            days = request.form.getlist('weekdays') or ['1']
+            days = ','.join(sorted({d for d in days if d.isdigit()})) or '1'
+            schedule = f'{int(mm)} {int(hh)} * * {days}'
+        elif smode == 'interval':
+            n = (request.form.get('interval') or '').strip()
+            unit = request.form.get('interval_unit', 'h')
+            if not re.fullmatch(r'\d{1,4}', n) or int(n) < 1 or unit not in ('h', 'm'):
+                raise ValueError('间隔须为正整数，单位选小时或分钟')
+            schedule = f'every {n}{unit}'
+        elif smode == 'once':
+            dt = request.form.get('once_at', '')
+            m2 = re.fullmatch(r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})', dt)
+            if not m2:
+                raise ValueError('请选择执行时间')
+            Y, Mo, D, hh, mm = m2.groups()
+            schedule = f'{int(mm)} {int(hh)} {int(D)} {int(Mo)} *'
+            once = True
+        else:  # custom
+            schedule = (request.form.get('schedule') or '').strip()
+            if not schedule:
+                raise ValueError('自定义周期不能为空')
+            once = request.form.get('once_flag') == '1'
+    except Exception as ve:
+        flash(f'周期设置有误：{ve}', 'err')
+        return redirect(url_for('cron'))
+    from shlex import quote as _q
+    cmd = f'{HERMES_BIN} cron create {_q(schedule)} {_q(prompt)}'
+    if name:
+        cmd += f' --name {_q(name)}'
+    if deliver:
+        cmd += f' --deliver {_q(deliver)}'
+    if once:
+        cmd += ' --repeat 1'
+    rc, out = run(cmd + ' 2>&1', timeout=60)
+    if rc == 0:
+        flash(f'定时任务已创建：{name or schedule}', 'ok')
+    else:
+        flash(f'创建失败：{out[:200]}', 'err')
+    return redirect(url_for('cron'))
+
+def _cron_job_name(jid):
+    """从jobs.json查任务名，查不到返回空（任务可能已删）。"""
+    try:
+        import json as _json
+        data = _json.loads((HERMES_HOME / 'cron' / 'jobs.json').read_text())
+        jobs = data.get('jobs', data) if isinstance(data, dict) else data
+        for j in jobs:
+            if str(j.get('id', '')) == jid:
+                return j.get('name', '')
+    except Exception:
+        pass
+    return ''
+
+
+def _cron_hist_record(job_id, ok, output, duration):
+    import datetime as _dt
+    try:
+        with db() as conn:
+            conn.execute('INSERT INTO cron_runs(job_id, job_name, ts, ok, output, duration) VALUES(?,?,?,?,?,?)',
+                         (job_id, _cron_job_name(job_id), _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                          1 if ok else 0, (output or '')[:500], round(duration, 1)))
+    except Exception:
+        pass
+
+
+@app.route('/cron/history')
+@login_required
+def cron_history():
+    jid = request.args.get('job_id', '')
+    try:
+        limit = int(request.args.get('limit', 20))
+    except ValueError:
+        limit = 20
+    limit = max(1, min(limit, 100))
+    with db() as conn:
+        if jid:
+            rows = [dict(x) for x in conn.execute(
+                'SELECT job_id, job_name, ts, ok, output, duration FROM cron_runs WHERE job_id=? ORDER BY id DESC LIMIT ?',
+                (jid, limit))]
+        else:
+            rows = [dict(x) for x in conn.execute(
+                'SELECT job_id, job_name, ts, ok, output, duration FROM cron_runs ORDER BY id DESC LIMIT ?', (limit,))]
+    # 标注已删除任务
+    for r in rows:
+        r['deleted'] = (r['job_name'] != '' and _cron_job_name(r['job_id']) == '')
+    return jsonify({'ok': True, 'rows': rows})
+
+
+@app.route('/cron/history/clear', methods=['POST'])
+@login_required
+def cron_history_clear():
+    with db() as conn:
+        conn.execute('DELETE FROM cron_runs')
+    flash('执行历史已清空', 'ok')
+    return redirect(url_for('cron'))
+
+
+# ---------- 多实例管理（v1：本机多HERMES_HOME） ----------
+DEFAULT_HERMES_HOME = str(HERMES_HOME)
+
+
+def _rebind_hermes_paths(home: str):
+    """按home重绑模块级Path常量（多实例切换的读取路径跟随）。"""
+    global HERMES_HOME, SOUL_FILE, MEM_DIR, CRON_FILE
+    HERMES_HOME = Path(home)
+    SOUL_FILE = HERMES_HOME / 'SOUL.md'
+    MEM_DIR = HERMES_HOME / 'memories'
+    CRON_FILE = HERMES_HOME / 'cron' / 'jobs.json'
+
+
+@app.before_request
+def _inst_before():
+    """请求前按session切换HERMES_HOME（v1：接受单worker内微小串扰窗口，文档已注明）。"""
+    home = session.get('inst_home')
+    target = home if (home and Path(home).exists()) else DEFAULT_HERMES_HOME
+    if str(HERMES_HOME) != target:
+        os.environ['HERMES_HOME'] = target
+        _rebind_hermes_paths(target)
+
+
+@app.after_request
+def _inst_after(resp):
+    # 请求后恢复默认，避免长连接/后台线程串环境
+    os.environ['HERMES_HOME'] = DEFAULT_HERMES_HOME
+    return resp
+
+
+def _seed_default_instance():
+    try:
+        with db() as conn:
+            n = conn.execute('SELECT COUNT(*) c FROM instances').fetchone()['c']
+            if n == 0:
+                conn.execute('INSERT INTO instances(name, home, note) VALUES(?,?,?)',
+                             ('默认实例', DEFAULT_HERMES_HOME, '安装时自动登记'))
+    except Exception:
+        pass
+
+
+def _current_instance():
+    with db() as conn:
+        home = session.get('inst_home')
+        if home:
+            row = conn.execute('SELECT * FROM instances WHERE home=?', (home,)).fetchone()
+            if row:
+                return dict(row)
+        row = conn.execute('SELECT * FROM instances ORDER BY id LIMIT 1').fetchone()
+        return dict(row) if row else {'id': 0, 'name': '默认实例', 'home': DEFAULT_HERMES_HOME}
+
+
+@app.route('/instances')
+@login_required
+def instances_page():
+    _seed_default_instance()
+    with db() as conn:
+        rows = [dict(x) for x in conn.execute('SELECT * FROM instances ORDER BY id')]
+    cur = _current_instance()
+    # 探测各实例gateway健康（进程是否指向该home粗略判断：config.yaml存在即可用）
+    for r in rows:
+        r['alive'] = Path(r['home'], 'config.yaml').exists()
+    return render_template('instances.html', rows=rows, cur=cur)
+
+
+@app.route('/instances/add', methods=['POST'])
+@login_required
+def instances_add():
+    name = (request.form.get('name') or '').strip()[:30]
+    home = (request.form.get('home') or '').strip()
+    if not name or not home.startswith('/') or not Path(home, 'config.yaml').exists():
+        flash('需要名称 + 绝对路径（且路径下有config.yaml）', 'err')
+        return redirect(url_for('instances_page'))
+    try:
+        with db() as conn:
+            conn.execute('INSERT INTO instances(name, home, note) VALUES(?,?,?)', (name, home, ''))
+        flash(f'实例「{name}」已登记', 'ok')
+    except Exception as e:
+        flash(f'登记失败（路径可能重复）：{e}', 'err')
+    return redirect(url_for('instances_page'))
+
+
+@app.route('/instances/switch/<int:iid>', methods=['POST'])
+@login_required
+def instances_switch(iid):
+    with db() as conn:
+        row = conn.execute('SELECT * FROM instances WHERE id=?', (iid,)).fetchone()
+    if not row or not Path(row['home']).exists():
+        flash('实例不存在或路径无效', 'err')
+        return redirect(url_for('instances_page'))
+    session['inst_home'] = row['home']
+    session['inst_name'] = row['name']
+    flash(f'已切换到实例「{row["name"]}」', 'ok')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/instances/delete/<int:iid>', methods=['POST'])
+@login_required
+def instances_delete(iid):
+    with db() as conn:
+        row = conn.execute('SELECT * FROM instances WHERE id=?', (iid,)).fetchone()
+        if row and row['home'] == DEFAULT_HERMES_HOME:
+            flash('默认实例不可删除', 'err')
+            return redirect(url_for('instances_page'))
+        conn.execute('DELETE FROM instances WHERE id=?', (iid,))
+    if session.get('inst_home') == (row['home'] if row else None):
+        session.pop('inst_home', None)
+    flash('已删除登记（实例文件不受影响）', 'ok')
+    return redirect(url_for('instances_page'))
+
+
+def _metrics_sample():
+    """采一个CPU%/内存%点入库；距上次采样不足60秒则跳过。惰性触发，无后台线程。"""
+    try:
+        _, stat1 = run("cat /proc/stat | grep '^cpu ' | awk '{print $2+$3+$4, $5}'", timeout=10)
+        import time as _t
+        _t.sleep(0.4)
+        _, stat2 = run("cat /proc/stat | grep '^cpu ' | awk '{print $2+$3+$4, $5}'", timeout=10)
+        b1, i1 = (int(x) for x in stat1.split())
+        b2, i2 = (int(x) for x in stat2.split())
+        busy = b2 - b1
+        total = (b2 + i2) - (b1 + i1)
+        cpu = round(busy * 100 / total, 1) if total > 0 else 0.0
+    except Exception:
+        cpu = 0.0
+    try:
+        _, meminfo = run("grep -E 'MemTotal|MemAvailable' /proc/meminfo | awk '{print $2}'", timeout=10)
+        vals = [int(x) for x in meminfo.split()]
+        mem = round((vals[0] - vals[1]) * 100 / vals[0], 1) if len(vals) == 2 and vals[0] > 0 else 0.0
+    except Exception:
+        mem = 0.0
+    try:
+        _, load1 = run("cat /proc/loadavg | awk '{print $1}'", timeout=10)
+        load1v = float(load1.strip() or 0)
+    except (ValueError, OSError):
+        load1v = 0.0
+    now = int(time.time())
+    try:
+        with db() as conn:
+            conn.execute('INSERT OR REPLACE INTO metrics(ts, cpu, mem, load1) VALUES(?,?,?,?)', (now, cpu, mem, load1v))
+            conn.execute('DELETE FROM metrics WHERE ts < ?', (now - 48 * 3600,))
+    except Exception:
+        pass
+    return now, cpu, mem, load1v
+
+
+# ---------- HTTPS一键配（gunicorn直挂TLS + 自签证书） ----------
+CERT_DIR = APP_DIR / 'certs'
+
+
+HTTPS_UNIT_CANDIDATES = [
+    Path('/etc/systemd/system/hermes-console.service'),
+    Path(os.environ.get('CONSOLE_UNIT_PATH', '/home/ubuntu/.config/systemd/user/hermes-console.service')),
+]
+
+
+def _find_unit():
+    for p in HTTPS_UNIT_CANDIDATES:
+        if p.exists():
+            return p
+    return None
+
+
+def _https_unit_info():
+    """读当前systemd unit内容，判断TLS状态与端口。"""
+    unit = _find_unit()
+    if not unit:
+        return {'managed': False}
+    txt = unit.read_text()
+    tls = '--certfile' in txt
+    m = re.search(r'-b 0\.0\.0\.0:(\d+)', txt)
+    port = m.group(1) if m else '8787'
+    cert = CERT_DIR / 'console.crt'
+    key = CERT_DIR / 'console.key'
+    return {'managed': True, 'tls': tls, 'port': port,
+            'cert_ready': cert.exists() and key.exists(),
+            'cert_path': str(cert), 'key_path': str(key)}
+
+
+@app.route('/https')
+@login_required
+def https_page():
+    return render_template('https.html', info=_https_unit_info())
+
+
+@app.route('/https/generate', methods=['POST'])
+@login_required
+def https_generate():
+    CERT_DIR.mkdir(parents=True, exist_ok=True)
+    cert = CERT_DIR / 'console.crt'
+    key = CERT_DIR / 'console.key'
+    ip = run("hostname -I | awk '{print $1}'", timeout=10)[1].strip() or '127.0.0.1'
+    rc, out = run(
+        f"openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes "
+        f"-keyout {shlex.quote(str(key))} -out {shlex.quote(str(cert))} "
+        f"-subj '/CN={ip}' -addext 'subjectAltName=IP:{ip}' 2>&1", timeout=60)
+    if rc != 0 or not cert.exists():
+        return jsonify({'ok': False, 'msg': '证书生成失败：' + out[:200]})
+    os.chmod(key, 0o600)
+    return jsonify({'ok': True, 'msg': f'自签证书已生成（10年有效，CN={ip}）'})
+
+
+@app.route('/https/enable', methods=['POST'])
+@login_required
+def https_enable():
+    info = _https_unit_info()
+    if not info.get('managed'):
+        return jsonify({'ok': False, 'msg': '未找到systemd服务unit（可能前台运行），无法自动切换'})
+    if not info.get('cert_ready'):
+        return jsonify({'ok': False, 'msg': '请先生成证书'})
+    unit = _find_unit()
+    txt = unit.read_text()
+    if not os.access(unit.parent, os.W_OK) and not run('sudo -n true 2>/dev/null', timeout=10)[0] == 0:
+        return jsonify({'ok': False, 'msg': 'unit目录无写权限且sudo不可用，请手动修改'})
+    enable = (request.get_json(force=True, silent=True) or {}).get('enable')
+    port = info.get('port', '8787')
+    # 切回HTTP时要用原始HTTP端口：从.bak或unit注释恢复
+    raw_http = None
+    bak = unit.with_suffix('.service.bak')
+    src_txt = bak.read_text() if bak.exists() else ''
+    m0 = re.search(r'-b 0\.0\.0\.0:(\d+)', src_txt)
+    if m0:
+        raw_http = m0.group(1)
+    if raw_http and '--certfile' not in src_txt:
+        port = raw_http  # bak是HTTP版，用它
+    tls_port = str(int(port) + 1)
+    if enable:
+        new_exec = (f'{APP_DIR}/venv/bin/gunicorn -w 1 --threads 8 --timeout 700 '
+                    f'--certfile {CERT_DIR}/console.crt --keyfile {CERT_DIR}/console.key '
+                    f'-b 0.0.0.0:{tls_port} app:app')
+        txt2 = re.sub(r'ExecStart=.*', 'ExecStart=' + new_exec, txt, count=1)
+    else:
+        txt2 = re.sub(r'ExecStart=.*',
+                      f'ExecStart={APP_DIR}/venv/bin/gunicorn -w 1 --threads 8 --timeout 700 -b 0.0.0.0:{port} app:app',
+                      txt, count=1)
+    is_system = str(unit).startswith('/etc/systemd')
+    pre = 'sudo -n ' if is_system else ''
+    ctl = 'sudo systemctl' if is_system else 'systemctl --user'
+    bak = unit.with_suffix('.service.bak')
+    if not bak.exists():
+        if is_system:
+            run(f'{pre}cp {shlex.quote(str(unit))} {shlex.quote(str(bak))}', timeout=15)
+        else:
+            bak.write_text(txt)
+    # 写回：system级走sudo tee
+    if is_system:
+        run(f"sudo -n tee {shlex.quote(str(unit))} > /dev/null <<'UNIT_EOF'\n{txt2}\nUNIT_EOF", timeout=15)
+    else:
+        unit.write_text(txt2)
+    run(f'{ctl} daemon-reload', timeout=20)
+    # restart放后台（把自己杀了也无所谓，前端轮询探活）
+    import threading as _th
+    def _do_restart():
+        run(f'{ctl} restart hermes-console', timeout=30)
+    _th.Thread(target=_do_restart, daemon=True).start()
+    target = f'https://0.0.0.0:{tls_port}' if enable else f'http://0.0.0.0:{port}'
+    return jsonify({'ok': True, 'msg': f'切换指令已发出，约10秒后生效：{target}'})
+
+
+@app.route('/https/status')
+@login_required
+def https_status():
+    return jsonify(_https_unit_info())
+
+
+@app.route('/metrics/api')
+@login_required
+def metrics_api():
+    try:
+        hours = int(request.args.get('hours', 6))
+    except ValueError:
+        hours = 6
+    hours = max(1, min(hours, 48))
+    now = int(time.time())
+    # 惰性补采：距上次点>=60秒才采
+    with db() as conn:
+        row = conn.execute('SELECT MAX(ts) FROM metrics').fetchone()
+        last = row[0] if row and row[0] else 0
+    if now - last >= 60:
+        _metrics_sample()
+    with db() as conn:
+        rows = [dict(x) for x in conn.execute(
+            'SELECT ts, cpu, mem, load1 FROM metrics WHERE ts >= ? ORDER BY ts', (now - hours * 3600,))]
+    return jsonify({'ok': True, 'rows': rows, 'hours': hours})
+
+
+@app.route('/cron/action/<jid>/<act>', methods=['POST'])
+@login_required
+def cron_action(jid, act):
+    if act not in ('pause', 'resume', 'run', 'remove') or not re.fullmatch(r'[0-9a-zA-Z_-]{6,64}', jid):
+        abort(400)
+    import time as _time
+    t0 = _time.time()
+    rc, out = run(f'{HERMES_BIN} cron {act} {jid} 2>&1', timeout=60)
+    duration = _time.time() - t0
+    if act == 'run':
+        _cron_hist_record(jid, rc == 0, out, duration)
+    if rc == 0:
+        flash({'pause': '已暂停', 'resume': '已恢复', 'run': '已触发立即执行（下个调度周期内跑）', 'remove': '已删除'}[act], 'ok')
+    else:
+        flash(f'操作失败：{out[:200]}', 'err')
+    return redirect(url_for('cron'))
 
 # ---------- 会话（桥接Hermes Agent本体：hermes -z + --resume） ----------
 _chat_locks = {}
@@ -479,23 +1468,100 @@ def chat_send():
     lock = _chat_lock(chat_id)
     if not lock.acquire(blocking=False):
         return _j.dumps({'ok': False, 'error': '上一条还在处理中，请稍候', 'chat_id': chat_id}), 409
-    try:
-        before_ids = set(_list_session_ids()) if not sid else set()
-        reply, new_sid = _hermes_ask(full_text, sid)
-        if not new_sid:
-            new_sid = _new_session_id(before_ids)
+    lock.release()  # 线程内再持锁；此处只做占位检查
+
+    if request.args.get('sync') == '1':
+        # 同步旧路径（冒烟/e2e用）
+        try:
+            before_ids = set(_list_session_ids()) if not sid else set()
+            reply, new_sid = _hermes_ask(full_text, sid)
+            if not new_sid:
+                new_sid = _new_session_id(before_ids)
+            with db() as conn:
+                conn.execute('INSERT INTO chat_msgs(chat_id,role,content,created) VALUES(?,?,?,?)',
+                             (chat_id, 'assistant', reply, time.time()))
+                conn.execute('UPDATE chats SET session_id=?, last_active=? WHERE id=?',
+                             (new_sid or sid, time.time(), chat_id))
+            return _j.dumps({'ok': True, 'chat_id': chat_id, 'reply': reply})
+        except subprocess.TimeoutExpired:
+            return _j.dumps({'ok': False, 'error': 'Agent响应超时（10分钟），可能任务太重', 'chat_id': chat_id}), 504
+        except Exception as e:
+            return _j.dumps({'ok': False, 'error': f'调用失败：{str(e)[:300]}', 'chat_id': chat_id})
+    # 异步路径：起线程跑，立即返回task_id
+    import uuid as _uuid
+    task_id = _uuid.uuid4().hex[:16]
+    with db() as conn:
+        conn.execute('INSERT INTO chat_tasks(id, chat_id, status, started, output, session_id, error) VALUES(?,?,?,?,?,?,?)',
+                     (task_id, chat_id, 'running', time.time(), '', sid or '', ''))
+    before_ids = set(_list_session_ids()) if not sid else set()
+
+    def _run_task():
+        lk = _chat_lock(chat_id)
+        if not lk.acquire(blocking=False):
+            with db() as conn:
+                conn.execute("UPDATE chat_tasks SET status='error', error='该会话已有任务在跑' WHERE id=?", (task_id,))
+            return
+        try:
+            reply, new_sid = _hermes_ask(full_text, sid)
+            if not new_sid:
+                new_sid = _new_session_id(before_ids)
+            with db() as conn:
+                conn.execute('INSERT INTO chat_msgs(chat_id,role,content,created) VALUES(?,?,?,?)',
+                             (chat_id, 'assistant', reply, time.time()))
+                conn.execute('UPDATE chats SET session_id=?, last_active=? WHERE id=?',
+                             (new_sid or sid, time.time(), chat_id))
+                conn.execute("UPDATE chat_tasks SET status='done', output=?, session_id=? WHERE id=?",
+                             (reply[:500], new_sid or sid or '', task_id))
+        except subprocess.TimeoutExpired:
+            with db() as conn:
+                conn.execute("UPDATE chat_tasks SET status='error', error='Agent响应超时（10分钟）' WHERE id=?", (task_id,))
+        except Exception as e:
+            with db() as conn:
+                conn.execute("UPDATE chat_tasks SET status='error', error=? WHERE id=?", (str(e)[:300], task_id))
+        finally:
+            lk.release()
+
+    threading.Thread(target=_run_task, daemon=True).start()
+    return _j.dumps({'ok': True, 'chat_id': chat_id, 'task_id': task_id, 'async': True})
+
+@app.route('/chat/poll')
+@login_required
+def chat_poll():
+    task_id = request.args.get('task_id', '')
+    if not re.fullmatch(r'[0-9a-f]{16}', task_id):
+        return jsonify({'ok': False, 'error': '参数错误'})
+    with db() as conn:
+        row = conn.execute('SELECT chat_id, status, output, error, started FROM chat_tasks WHERE id=?', (task_id,)).fetchone()
+    if not row:
+        return jsonify({'ok': False, 'error': '任务不存在'})
+    started = row['started'] or 0
+    elapsed = round(time.time() - started)
+    if row['status'] == 'running' and elapsed > 620:
+        # 超时兜底：CLI没回但状态还running（worker重启丢线程等）
         with db() as conn:
-            conn.execute('INSERT INTO chat_msgs(chat_id,role,content,created) VALUES(?,?,?,?)',
-                         (chat_id, 'assistant', reply, time.time()))
-            conn.execute('UPDATE chats SET session_id=?, last_active=? WHERE id=?',
-                         (new_sid or sid, time.time(), chat_id))
-        return _j.dumps({'ok': True, 'chat_id': chat_id, 'reply': reply})
-    except subprocess.TimeoutExpired:
-        return _j.dumps({'ok': False, 'error': 'Agent响应超时（10分钟），可能任务太重', 'chat_id': chat_id}), 504
-    except Exception as e:
-        return _j.dumps({'ok': False, 'error': f'调用失败：{str(e)[:300]}', 'chat_id': chat_id}), 500
-    finally:
-        lock.release()
+            conn.execute("UPDATE chat_tasks SET status='error', error='任务超时中断' WHERE id=?", (task_id,))
+        return jsonify({'ok': True, 'status': 'error', 'error': '任务超时中断', 'chat_id': row['chat_id'], 'elapsed': elapsed})
+    return jsonify({'ok': True, 'status': row['status'], 'reply': row['output'] if row['status'] == 'done' else '',
+                    'error': row['error'] or '', 'chat_id': row['chat_id'], 'elapsed': elapsed})
+
+
+@app.route('/chat/search')
+@login_required
+def chat_search():
+    q = (request.args.get('q') or '').strip()
+    if not q or len(q) > 100:
+        return jsonify({'ok': True, 'hits': []})
+    like = f'%{q}%'
+    with db() as conn:
+        rows = [dict(x) for x in conn.execute(
+            'SELECT m.chat_id, m.role, m.content, m.created, c.title '
+            'FROM chat_msgs m LEFT JOIN chats c ON c.id = m.chat_id '
+            'WHERE m.content LIKE ? ORDER BY m.created DESC LIMIT 20', (like,))]
+    hits = [{'chat_id': r['chat_id'], 'title': r['title'] or '(无标题)', 'role': r['role'],
+             'snippet': (r['content'] or '')[:120], 'time': time.strftime('%m-%d %H:%M', time.localtime(r['created']))}
+            for r in rows]
+    return jsonify({'ok': True, 'hits': hits})
+
 
 @app.route('/chat/delete/<int:cid>', methods=['POST'])
 @login_required
@@ -510,17 +1576,32 @@ def chat_delete(cid):
 UPDATE_STATE_FILE = Path(os.environ.get('CONSOLE_DB', str(APP_DIR / 'console.db'))).with_suffix('.update.json')
 
 def _ustate_read():
-    import json as _j
+    import json as _j, time as _time
     try:
-        return _j.loads(UPDATE_STATE_FILE.read_text())
+        st = _j.loads(UPDATE_STATE_FILE.read_text())
+        # 陈旧自愈：running超过45分钟视为进程崩溃残留，自动复位
+        if st.get('running') and st.get('ts') and _time.time() - st['ts'] > 2700:
+            st = {'running': False, 'stage': '', 'result': '上次操作超时中断，已自动复位', 'ok': False}
+            try:
+                UPDATE_STATE_FILE.write_text(_j.dumps(st))
+            except OSError:
+                pass
+        return st
     except Exception:
         return {'running': False, 'stage': '', 'result': '', 'ok': None}
 
 def _ustate_write(**kw):
-    import json as _j
+    import json as _j, time as _time, tempfile as _tf
     s = _ustate_read()
     s.update(kw)
-    UPDATE_STATE_FILE.write_text(_j.dumps(s, ensure_ascii=False))
+    s['ts'] = _time.time()
+    try:
+        fd, tmp = _tf.mkstemp(dir=str(UPDATE_STATE_FILE.parent), suffix='.tmp')
+        with os.fdopen(fd, 'w') as f:
+            f.write(_j.dumps(s, ensure_ascii=False))
+        os.replace(tmp, UPDATE_STATE_FILE)
+    except OSError:
+        pass
 
 # 状态读写一律走 _ustate_read()/_ustate_write()（多worker安全）
 
@@ -967,7 +2048,7 @@ def model_test():
                         json={'model': model_name, 'max_tokens': 16, 'messages': [{'role': 'user', 'content': 'ping'}]},
                         timeout=30)
         else:
-            url = (base_url or dict((p[0], p[2]) for p in KNOWN_PROVIDERS).get(provider, '')).rstrip('/') + '/chat/completions'
+            url = (base_url or (provider_info(provider).get('base_url') or '')).rstrip('/') + '/chat/completions'
             r = rq.post(url, headers={'Authorization': f'Bearer {api_key}'},
                         json={'model': model_name, 'max_tokens': 16, 'messages': [{'role': 'user', 'content': 'ping'}]},
                         timeout=30)
@@ -1322,7 +2403,12 @@ def skills_view():
     if '..' in rel:
         abort(400)
     for base in (HERMES_HOME / 'skills', HERMES_HOME / 'skills-disabled'):
-        p = base / rel / 'SKILL.md'
+        p = (base / rel / 'SKILL.md')
+        try:
+            if not p.resolve().is_relative_to(base.resolve()):
+                abort(400)
+        except (OSError, ValueError):
+            abort(400)
         if p.exists():
             _, _, _, t = parse_skill_md(p)
             return render_template('skill_view.html', path=rel, text=t)
@@ -1347,7 +2433,11 @@ def skills_upload():
             flash('zip内含非法路径，拒绝', 'err')
             return redirect(url_for('skills'))
         target.mkdir(parents=True)
-        zf.extractall(target)
+        import sys as _sys
+        if _sys.version_info >= (3, 12, 5) or _sys.version_info >= (3, 13):
+            zf.extractall(target, filter='data')
+        else:
+            zf.extractall(target)
         # 若解压后只有一层目录，上提
         subs = list(target.iterdir())
         if len(subs) == 1 and subs[0].is_dir() and not (target / 'SKILL.md').exists():
@@ -1416,6 +2506,8 @@ def backups_create():
 def backups_download(name):
     p = BACKUP_DIR / name
     if not p.exists() or not name.endswith('.tar.gz') or '..' in name:
+        abort(404)
+    if p.resolve().parent != BACKUP_DIR.resolve():
         abort(404)
     return send_file(p, as_attachment=True)
 
@@ -1486,5 +2578,15 @@ def seed_current_model():
 init_db()
 sync_zh_dict()
 seed_current_model()
+def _cleanup_stale_tasks():
+    """启动时把running态的chat_tasks置失败（worker重启丢线程的残留）。"""
+    try:
+        with db() as conn:
+            conn.execute("UPDATE chat_tasks SET status='error', error='服务重启中断，请重发' WHERE status='running'")
+    except Exception:
+        pass
+
+_cleanup_stale_tasks()
+
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8787, debug=False)

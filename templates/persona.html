@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}人格记忆{% endblock %}
+{% block body %}
+<h2>人格记忆</h2>
+<div class="pm-what" style="margin-bottom:14px">这里定义 Agent 是谁、怎么说话、记住了什么。所有改动<b>下个新会话生效</b>，保存自动备份旧版。<b>容量建议</b>：都别贪长——SOUL 每个会话整份注入，越长越耗 token 且稀释重点（建议 2000 字符内）；MEMORY/USER 超限会导致 Agent 存不进新记忆，太长则挤占上下文、降低指令服从度。够用就好。</div>
+
+<!-- 顶部概览 -->
+<div class="pm-stats">
+  <div class="pm-stat">
+    <div class="pm-ic">🎭</div>
+    <div class="pm-v">人格提示词</div>
+    <div class="pm-k"><span class="mono pm-file">SOUL.md</span> · {{content|length}} 字符</div>
+  </div>
+  <div class="pm-stat {{ 'pm-warn' if mem_chars > mem_limit }}">
+    <div class="pm-ic">🧠</div>
+    <div class="pm-v">我的笔记</div>
+    <div class="pm-k"><span class="mono pm-file">MEMORY.md</span> · {{mem|length}} 条 · {{mem_chars}}/{{mem_limit}} 字符</div>
+    <div class="pm-bar"><i style="width:{{ [(mem_chars*100/mem_limit)|round|int, 100]|min }}%"></i></div>
+  </div>
+  <div class="pm-stat {{ 'pm-warn' if usr_chars > usr_limit }}">
+    <div class="pm-ic">👤</div>
+    <div class="pm-v">用户档案</div>
+    <div class="pm-k"><span class="mono pm-file">USER.md</span> · {{usr|length}} 条 · {{usr_chars}}/{{usr_limit}} 字符</div>
+    <div class="pm-bar"><i style="width:{{ [(usr_chars*100/usr_limit)|round|int, 100]|min }}%"></i></div>
+  </div>
+</div>
+
+<!-- 人格 -->
+<div class="card">
+<div class="pm-head">
+  <div class="pm-title"><span class="pm-em">🎭</span>人格提示词 <span class="mono pm-file">SOUL.md</span></div>
+  <div class="pm-right"><span class="pm-hint">{{content|length}} 字符</span></div>
+</div>
+<div class="pm-what">定义 Agent 是谁：身份、说话风格、行为底线。每次新会话开始时整份注入，是 Agent 的"性格说明书"。<b>框架无字符上限，但建议 2000 字符以内</b>——越长每轮越耗 token，且冗长会稀释关键指令。此文件只有你手动修改，Agent 不会动它，故不提供自动整理。</div>
+{% if baks %}
+<details class="pm-baks">
+  <summary>🕘 历史备份（{{baks|length}}）：{% for b in baks %}<span class="mono pm-bak">{{b}}</span>{% endfor %}</summary>
+</details>
+{% endif %}
+<details class="pm-editraw" {% if not content %}open{% endif %}>
+  <summary>✏️ 查看并编辑人格（SOUL.md）</summary>
+  <form method="post" action="/soul" style="margin-top:8px">
+    <div class="pm-editor-wrap">
+      <textarea name="content" id="soulbox" rows="20" spellcheck="false">{{content}}</textarea>
+      <div class="pm-editor-foot">
+        <span id="soulcnt">{{content|length}}</span> 字符 · 保存后下个新会话生效
+        <button class="btn" type="submit" style="margin-left:auto" onclick="return confirm('保存将覆盖 SOUL.md（旧版自动备份）。确认？')">保存人格</button>
+      </div>
+    </div>
+  </form>
+</details>
+</div>
+
+{% macro memblock(icon, title, sub, what, entries, which, chars, limit) %}
+<div class="card">
+<div class="pm-head">
+  <div class="pm-title"><span class="pm-em">{{icon}}</span>{{title}} <span class="mono pm-file">{{sub}}</span></div>
+  <div class="pm-right">
+    {% if chars > limit %}<span class="tag r">已超限，保存新记忆会失败</span>{% endif %}
+    <span class="pm-hint">{{entries|length}} 条 · {{chars}}/{{limit}} 字符</span>
+    <button class="btn ghost pm-tidy-btn" onclick="tidyStart('{{which}}',this)" title="让 Agent 提炼：删旧/合并/精简，确认后才覆盖">🧹 整理</button>
+  </div>
+</div>
+<div class="pm-what">{{what}} 此文件由 Agent 随使用自动更新。</div>
+<div class="pm-tidy-box" id="tidy-{{which}}" style="display:none">
+  <div class="pm-tidy-status" id="tidy-status-{{which}}">Agent 整理中，约1-3分钟…</div>
+  <div id="tidy-result-{{which}}" style="display:none">
+    <div class="pm-tidy-sum" id="tidy-sum-{{which}}"></div>
+    <div class="pm-tidy-preview">
+      <div class="pm-tidy-col"><b>整理后（新）</b><div id="tidy-new-{{which}}" class="pm-tidy-text"></div></div>
+    </div>
+    <div class="pm-tidy-actions">
+      <button class="btn" onclick="tidyApply('{{which}}')">✓ 应用整理结果（旧版自动备份）</button>
+      <button class="btn ghost" onclick="tidyCancel('{{which}}')">✕ 放弃，不改</button>
+    </div>
+  </div>
+</div>
+{% if entries %}
+<div class="pm-list">
+{% for e in entries %}
+<div class="pm-item">
+  <span class="pm-idx">{{loop.index}}</span>
+  <div class="pm-txt">{{e}}</div>
+  <form method="post" action="/memory/delete" onsubmit="return confirm('删除第 {{loop.index}} 条？\n（会自动备份原文）')">
+    <input type="hidden" name="which" value="{{which}}"><input type="hidden" name="idx" value="{{loop.index0}}">
+    <button class="btn danger pm-del" title="删除此条">✕</button>
+  </form>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="pm-empty">暂无{{title}}内容</div>
+{% endif %}
+<details class="pm-editraw">
+  <summary>✏️ 整体编辑原文</summary>
+  <form method="post" action="/memory/edit" style="margin-top:8px">
+  <input type="hidden" name="which" value="{{which}}">
+  <textarea name="content" rows="10" spellcheck="false">{{entries|join('\n§\n')}}</textarea>
+  <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
+    <button class="btn" type="submit" onclick="return confirm('整体覆盖保存？（旧版自动备份）')">保存{{title}}</button>
+    <span style="color:var(--mut);font-size:12px">各条之间用单独一行 § 分隔</span>
+  </div>
+  </form>
+</details>
+</div>
+{% endmacro %}
+
+{{ memblock('🧠', '我的笔记', 'MEMORY.md', 'Agent 自己记的工作笔记：项目口径、环境坑、待办线索、你定下的规则。跨会话长期生效，Agent 干活时随时翻。', mem, 'mem', mem_chars, mem_limit) }}
+{{ memblock('👤', '用户档案', 'USER.md', '关于你本人的档案：作息习惯、沟通偏好、决策方式、信任规则。Agent 每次开口前都会参考，让它按你的方式说话办事。', usr, 'usr', usr_chars, usr_limit) }}
+
+<!-- 容量设置 -->
+<div class="card">
+<div class="pm-head">
+  <div class="pm-title"><span class="pm-em">📐</span>记忆容量设置 <span class="mono pm-file">config.yaml → memory</span></div>
+  <span class="pm-hint">当前上限即上方进度条的分母</span>
+</div>
+<div class="pm-what">MEMORY.md / USER.md 的字符上限可调。默认值：MEMORY 2200 / USER 1375（官方）。超上限 = Agent 存不进新记忆；设太大 = 每会话注入内容过多，挤占上下文、降低服从度、多耗 token。<b>建议按需小幅上调，不要一步到顶。</b></div>
+<form method="post" action="/persona" class="pm-limits">
+  <input type="hidden" name="act" value="limits">
+  <label>MEMORY.md 上限（字符）<input name="mem_limit" type="number" min="200" max="50000" value="{{mem_limit}}"></label>
+  <label>USER.md 上限（字符）<input name="usr_limit" type="number" min="100" max="20000" value="{{usr_limit}}"></label>
+  <button class="btn" type="submit">保存容量</button>
+</form>
+<div style="margin-top:8px;color:var(--mut);font-size:12.5px">官方默认：MEMORY {{defaults.mem}} / USER {{defaults.usr}}。保存后需重启 Gateway 生效（去「会话通道」页）。</div>
+</div>
+
+<style>
+.pm-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.pm-stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;position:relative;overflow:hidden}
+.pm-stat.pm-warn{border-color:var(--err);background:#fffafa}
+.pm-ic{font-size:18px}
+.pm-v{font-size:19px;font-weight:700;margin-top:4px}
+.pm-k{color:var(--mut);font-size:12px;margin-top:2px}
+.pm-bar{height:5px;background:#eef1f5;border-radius:3px;margin-top:8px;overflow:hidden}
+.pm-bar i{display:block;height:100%;background:var(--pri);border-radius:3px}
+.pm-warn .pm-bar i{background:var(--err)}
+.pm-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.pm-title{font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:7px}
+.pm-em{font-size:16px}
+.pm-hint{color:var(--mut);font-size:12.5px}
+.pm-what{background:#f6f8fc;border:1px solid #e3e9f4;border-radius:8px;padding:9px 12px;font-size:12.5px;color:#4a5a74;line-height:1.7;margin-bottom:12px}
+.pm-file{background:#eef1f5;border-radius:6px;padding:1px 8px;font-size:11.5px;color:var(--mut);font-weight:400}
+.pm-right{display:flex;align-items:center;gap:8px}
+.pm-editor-wrap{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pm-editor-wrap textarea{border:none;border-radius:0;min-height:320px;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;background:#fcfdfe;box-shadow:none}
+.pm-editor-wrap textarea:focus{box-shadow:none}
+.pm-editor-foot{display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--line);background:#fafbfc;color:var(--mut);font-size:12.5px}
+.pm-baks{margin-top:10px}
+.pm-baks summary{cursor:pointer;color:var(--mut);font-size:12.5px}
+.pm-bak-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pm-bak{background:#eef1f5;border-radius:6px;padding:2px 8px;font-size:11.5px;color:var(--mut)}
+.pm-list{display:flex;flex-direction:column;gap:6px}
+.pm-item{display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;transition:border-color .15s}
+.pm-item:hover{border-color:#b9c6e8}
+.pm-idx{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#eef2fb;color:var(--pri);font-size:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;margin-top:1px}
+.pm-txt{flex:1;font-size:13px;line-height:1.65;word-break:break-word}
+.pm-del{padding:2px 8px;font-size:11.5px;border-radius:6px;flex-shrink:0;margin-top:2px}
+.pm-empty{color:var(--mut);font-size:13px;padding:18px;text-align:center;border:1px dashed var(--line);border-radius:8px}
+.pm-editraw{margin-top:10px}
+.pm-editraw summary{cursor:pointer;color:var(--pri);font-size:13px}
+@media(max-width:760px){.pm-stats{grid-template-columns:1fr}}
+.pm-limits{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.pm-limits label{flex:1;min-width:180px;margin:0}
+.pm-limits input[type=number]{max-width:200px}
+.pm-limits .btn{flex-shrink:0}
+</style>
+<style>
+.pm-tidy-btn{padding:4px 12px;font-size:12.5px}
+.pm-tidy-box{margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:14px;background:#fafbfe}
+.pm-tidy-status{color:var(--mut);font-size:13px;padding:8px 0}
+.pm-tidy-sum{font-size:13.5px;font-weight:600;margin-bottom:10px;color:var(--txt)}
+.pm-tidy-preview{display:flex;flex-direction:column;gap:8px}
+.pm-tidy-col{font-size:12.5px;color:var(--mut)}
+.pm-tidy-text{max-height:260px;overflow-y:auto;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin-top:5px}
+.pm-tidy-actions{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.pm-tidy-ok{color:var(--ok);font-size:13px;font-weight:600}
+</style>
+<script>
+const sb=document.getElementById('soulbox'), sc=document.getElementById('soulcnt');
+if(sb&&sc){sb.addEventListener('input',()=>{sc.textContent=sb.value.length;});}
+const tidyData={};
+function tidyStart(which,btn){
+  const box=document.getElementById('tidy-'+which), st=document.getElementById('tidy-status-'+which),
+        res=document.getElementById('tidy-result-'+which);
+  box.style.display='block'; res.style.display='none';
+  st.style.display='block'; st.textContent='Agent 整理中，约1-3分钟，请勿关闭页面…';
+  btn.disabled=true; btn.textContent='整理中…';
+  const fd=new FormData(); fd.append('which',which);
+  fetch('/memory/tidy',{method:'POST',body:fd}).then(r=>r.json()).then(j=>{
+    btn.disabled=false; btn.textContent='🧹 整理';
+    if(!j.ok){st.textContent='⚠️ '+j.error; return;}
+    tidyData[which]=j.new_text;
+    st.style.display='none'; res.style.display='block';
+    const saved=j.old_chars-j.new_chars;
+    document.getElementById('tidy-sum-'+which).textContent=
+      `整理完成：${j.old_n} 条 → ${j.new_n} 条 · ${j.old_chars} → ${j.new_chars} 字符（省 ${saved>=0?saved:0} 字符）`;
+    document.getElementById('tidy-new-'+which).textContent=j.new_text;
+  }).catch(e=>{btn.disabled=false;btn.textContent='🧹 整理';st.textContent='⚠️ 请求失败：'+e;});
+}
+function tidyApply(which){
+  if(!tidyData[which])return;
+  const fd=new FormData(); fd.append('which',which); fd.append('content',tidyData[which]);
+  fetch('/memory/tidy_apply',{method:'POST',body:fd}).then(r=>r.json()).then(j=>{
+    if(j.ok){location.reload();}
+    else alert('写回失败：'+j.error);
+  });
+}
+function tidyCancel(which){
+  document.getElementById('tidy-'+which).style.display='none';
+  delete tidyData[which];
+}
+</script>
+{% endblock %}

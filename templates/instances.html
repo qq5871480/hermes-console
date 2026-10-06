@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}实例管理{% endblock %}
+{% block body %}
+<h2>🗃️ 实例管理</h2>
+<p style="color:var(--mut);font-size:13px;margin-bottom:14px">
+一台服务器可以装多套 Hermes（各自独立的 HERMES_HOME 目录）。这里登记它们，切换后整个控制台（模型/定时任务/记忆/技能/备份）都指向所选实例。v1 仅支持本机目录；远程服务器实例后续版本支持。
+</p>
+
+<div class="card" style="max-width:720px">
+<table style="width:100%;border-collapse:collapse;font-size:13.5px">
+<tr style="color:var(--mut);font-size:12px;text-align:left">
+  <th style="padding:6px 4px">名称</th><th>路径</th><th>状态</th><th>操作</th></tr>
+{% for r in rows %}
+<tr style="border-top:1px solid #eef1f5">
+  <td style="padding:8px 4px">
+    <b>{{ r.name }}</b>
+    {% if r.home == cur.home %}<span class="tag g">当前</span>{% endif %}
+  </td>
+  <td class="mono" style="font-size:12px">{{ r.home }}</td>
+  <td>{% if r.alive %}<span class="tag g">可用</span>{% else %}<span class="tag r">config.yaml缺失</span>{% endif %}</td>
+  <td style="white-space:nowrap">
+    {% if r.home != cur.home %}
+    <form class="inline" method="post" action="/instances/switch/{{r.id}}"><button class="btn ghost" style="padding:4px 12px;font-size:12.5px">切换</button></form>
+    {% endif %}
+    {% if r.home != home %}
+    <form class="inline" method="post" action="/instances/delete/{{r.id}}" onsubmit="return confirm('删除登记「'+{{ r.name|tojson }}+'」？只删登记，不动实例文件。')"><button class="btn danger" style="padding:4px 10px;font-size:12.5px">删</button></form>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}
+</table>
+</div>
+
+<div class="card" style="max-width:720px;margin-top:12px">
+  <div style="font-weight:600;font-size:14px;margin-bottom:10px">＋ 登记新实例</div>
+  <form method="post" action="/instances/add" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <input name="name" placeholder="名称（如：财务部-小助手）" required style="width:200px;border:1px solid #d4dae2;border-radius:7px;padding:7px 10px;font-size:13px">
+    <input name="home" placeholder="绝对路径，如 /home/bot2/.hermes" required style="flex:1;min-width:260px;border:1px solid #d4dae2;border-radius:7px;padding:7px 10px;font-size:13px" class="mono">
+    <button class="btn" style="padding:7px 18px">登记</button>
+  </form>
+  <p style="color:var(--mut);font-size:12px;margin:10px 0 0">要求：路径存在且里面已有 config.yaml（即已初始化过的 Hermes）。新实例的安装：给该用户跑一遍 hermes 安装即可。</p>
+</div>
+{% endblock %}

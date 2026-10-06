@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}HTTPS 加密{% endblock %}
+{% block body %}
+<h2>🔒 HTTPS 加密</h2>
+<p style="color:var(--mut);font-size:13px;margin-bottom:14px">
+给控制台网页加上TLS加密（浏览器地址栏变 https:// 和小锁）。用自签名证书——首次访问浏览器会提示「不安全」，点「高级」→「继续访问」即可，属正常现象。有公网域名时建议改用 Caddy/certbot 自动证书。
+</p>
+
+<div class="card" style="max-width:640px">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <span style="font-size:20px">{{ '🟢 HTTPS 已启用' if info.get('tls') else '⚪ 当前 HTTP 明文' }}</span>
+    <span class="tag {{ 'g' if info.get('managed') else 'gray' }}">{{ 'systemd服务' if info.get('managed') else '非systemd（前台运行）' }}</span>
+  </div>
+
+  <table style="width:100%;font-size:13px">
+    <tr><td style="color:var(--mut);width:120px;padding:4px 0">证书文件</td>
+        <td class="mono">{{ '✓ 已生成' if info.get('cert_ready') else '未生成' }}</td></tr>
+    <tr><td style="color:var(--mut)">当前端口</td>
+        <td class="mono">{{ info.get('port', '—') }}{% if info.get('tls') %}（HTTPS）{% endif %}</td></tr>
+    <tr><td style="color:var(--mut)">切换后端口</td>
+        <td class="mono">HTTPS={{ (info.get('port','8787')|int) + 1 }}（HTTP端口+1）</td></tr>
+  </table>
+
+  <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+    <button class="btn" id="genbtn" onclick="genCert()" {% if info.get('cert_ready') %}disabled style="opacity:.5"{% endif %}>① 生成自签证书</button>
+    {% if info.get('tls') %}
+    <button class="btn danger" onclick="toggleTLS(false)">② 切回 HTTP</button>
+    {% else %}
+    <button class="btn" id="enbtn" onclick="toggleTLS(true)">② 启用 HTTPS</button>
+    {% endif %}
+  </div>
+
+  <div id="out" style="margin-top:12px;font-size:13px;color:var(--mut);white-space:pre-line"></div>
+</div>
+
+<div class="card" style="max-width:640px;margin-top:12px">
+  <div style="font-size:13px;color:var(--mut);line-height:1.8">
+    <b>说明</b><br>
+    · 启用后控制台换端口（HTTP+1），旧地址会打不开，请用新 https 地址访问<br>
+    · 切换过程约10秒，页面会自动探测恢复<br>
+    · unit 修改前自动备份 .bak，改坏可手动还原<br>
+    · 自签证书10年有效，CN=本机IP
+  </div>
+</div>
+
+<script>
+function show(msg){ document.getElementById('out').textContent = msg; }
+async function genCert(){
+  const b = document.getElementById('genbtn');
+  b.disabled = true; show('生成中…');
+  const r = await fetch('/https/generate', {method:'POST'});
+  const j = await r.json();
+  show(j.msg || '');
+  if(j.ok) setTimeout(()=>location.reload(), 1500); else b.disabled = false;
+}
+let pollTimer = null;
+async function toggleTLS(enable){
+  const msg = enable ?
+    '启用HTTPS？\\n切换后地址变为 https://本机IP:' + (({{ info.get('port','8787')|int }}) + 1) + '\\n自签证书首次访问浏览器会告警，点高级→继续访问。' :
+    '切回HTTP？\\n地址变为 http://本机IP:{{ info.get("port","8787") }}';
+  if(!confirm(msg)) return;
+  const b = document.getElementById('enbtn') || document.getElementById('genbtn');
+  b.disabled = true;
+  show('切换中，等待服务重启…');
+  const r = await fetch('/https/enable', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enable: enable})});
+  const j = await r.json();
+  if(!j.ok){ show(j.msg); b.disabled = false; return; }
+  show(j.msg);
+  const proto = enable ? 'https' : 'http';
+  const port = enable ? ({{ info.get('port','8787')|int }} + 1) : {{ info.get('port','8787')|int }};
+  let waited = 0;
+  pollTimer = setInterval(()=>{
+    waited += 3;
+    fetch(proto + '://' + location.hostname + ':' + port + '/login', {mode:'no-cors'})
+      .then(()=>{ clearInterval(pollTimer); location.href = proto + '://' + location.hostname + ':' + port + '/login'; })
+      .catch(()=>{});
+    if(waited > 45){ clearInterval(pollTimer); show('超时未探测到恢复，请手动访问 ' + proto + '://' + location.hostname + ':' + port); }
+  }, 3000);
+}
+</script>
+{% endblock %}

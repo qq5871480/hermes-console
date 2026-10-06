@@ -22,7 +22,7 @@
 <td><span class="tag {{ 'g' if it.on else 'gray' }}">{{ '启用' if it.on else '禁用' }}</span></td>
 <td>
 <a class="btn ghost" href="/skills/view?path={{it.path}}" style="padding:5px 10px">查看</a>
-<button class="btn ghost" style="padding:5px 10px" onclick="zh('{{it.path}}','{{it.zh|e}}')">译</button>
+<button class="btn ghost" style="padding:5px 10px" onclick="zh({{it.path|tojson}},{{(it.zh or '')|tojson}})">译</button>
 <form class="inline" method="post" action="/skills/toggle">
 <input type="hidden" name="path" value="{{it.path}}"><input type="hidden" name="on" value="{{ '0' if it.on else '1' }}">
 <button class="btn {{ 'danger' if it.on else '' }}" style="padding:5px 10px">{{ '禁用' if it.on else '启用' }}</button>

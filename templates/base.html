@@ -122,10 +122,16 @@ a{color:var(--pri)}
   <nav>
     <a href="/" class="{{ 'on' if request.endpoint=='dashboard' }}"><span class="ic">▦</span>仪表盘</a>
     <a href="/chat" class="{{ 'on' if request.endpoint=='chat' }}"><span class="ic">💬</span>会话</a>
+    <a href="/cron" class="{{ 'on' if request.endpoint.startswith('cron') }}"><span class="ic">⏰</span>定时任务</a>
+    <a href="/persona" class="{{ 'on' if request.endpoint in ('persona','soul') or request.endpoint.startswith('memory') }}"><span class="ic">🧠</span>人格记忆</a>
     <a href="/model" class="{{ 'on' if request.endpoint in ('model',) }}"><span class="ic">◈</span>模型设置</a>
+    <a href="/roles" class="{{ 'on' if request.endpoint=='roles' }}"><span class="ic">🧭</span>模型分工</a>
     <a href="/channels" class="{{ 'on' if request.endpoint=='channels' }}"><span class="ic">⇄</span>会话通道</a>
     <a href="/skills" class="{{ 'on' if request.endpoint in ('skills','skills_view') }}"><span class="ic">✦</span>技能管理</a>
     <a href="/backups" class="{{ 'on' if request.endpoint=='backups' }}"><span class="ic">⛁</span>备份还原</a>
+<a href="/logs" class="{{ 'on' if request.endpoint=='logs' }}"><span class="ic">📜</span>Gateway 日志</a>
+<a href="/https" class="{{ 'on' if request.endpoint=='https_page' }}"><span class="ic">🔒</span>HTTPS</a>
+<a href="/instances" class="{{ 'on' if request.endpoint=='instances_page' }}"><span class="ic">🗃️</span>实例</a>
   </nav>
   <div class="foot"><a href="/change-password">改密码</a><a href="/logout">退出</a></div>
 </aside>

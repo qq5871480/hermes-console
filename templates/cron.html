@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}定时任务<div id="histmask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99">
+<div style="max-width:680px;margin:7vh auto;background:#fff;border-radius:12px;padding:18px 20px;max-height:78vh;overflow:auto">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+<h3 style="margin:0" id="histtitle">执行历史</h3>
+<button class="btn ghost" style="margin-left:auto;padding:4px 12px" onclick="document.getElementById('histmask').style.display='none'">✕ 关闭</button>
+</div>
+<p style="color:var(--mut);font-size:12px;margin:0 0 10px">注：仅记录从本页面手动点「立即跑」的执行；定时自动触发的走框架内部，此处看不到。</p>
+<div id="histbody" style="font-size:13px">加载中…</div>
+<div style="margin-top:12px;text-align:right"><button class="btn danger" style="padding:5px 14px" onclick="clearHist()">清空全部历史</button></div>
+</div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+async function showHist(jid, name){
+  document.getElementById('histtitle').textContent = '执行历史 · ' + (name||jid);
+  document.getElementById('histmask').style.display='block';
+  document.getElementById('histbody').innerHTML='加载中…';
+  try{
+    const r = await fetch('/cron/history?job_id='+encodeURIComponent(jid)+'&limit=20');
+    const j = await r.json();
+    if(!j.ok || !j.rows.length){ document.getElementById('histbody').innerHTML='<p style="color:var(--mut)">暂无执行记录——点「立即跑」后会在这里留痕。</p>'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse">';
+    html += '<tr style="color:var(--mut);font-size:12px;text-align:left"><th style="padding:4px">时间</th><th>结果</th><th>耗时</th><th>输出</th></tr>';
+    for(const row of j.rows){
+      const okc = row.ok ? '<span style="color:var(--ok);font-weight:600">成功</span>' : '<span style="color:var(--err);font-weight:600">失败</span>';
+      const del = row.deleted ? ' <span style="color:var(--mut);font-size:11px">(任务已删除)</span>' : '';
+      html += '<tr style="border-top:1px solid #eef1f5"><td style="padding:6px 4px;white-space:nowrap">'+esc(row.ts)+del+'</td><td>'+okc+'</td><td style="white-space:nowrap">'+(row.duration!=null?row.duration+'s':'—')+'</td><td style="color:var(--mut);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(row.output)+'">'+esc((row.output||'').slice(0,80))+'</td></tr>';
+    }
+    html += '</table>';
+    document.getElementById('histbody').innerHTML = html;
+  }catch(e){ document.getElementById('histbody').textContent='加载失败：'+e; }
+}
+async function clearHist(){
+  if(!confirm('清空全部任务的执行历史？不可恢复！')) return;
+  await fetch('/cron/history/clear',{method:'POST'});
+  document.getElementById('histmask').style.display='none';
+  location.reload();
+}
+</script>
+{% endblock %}
+{% block body %}
+<h2>定时任务</h2>
+<div class="card" style="margin-bottom:14px;padding:12px 14px">
+  <b>调度器状态：</b>
+  {% if status.running %}<span class="tag g">运行中</span>{% else %}<span class="tag r">未运行</span>{% endif %}
+  {% if status.heartbeat %}<span style="color:var(--mut);font-size:12.5px;margin-left:8px">心跳：{{status.heartbeat}}</span>{% endif %}
+  <span style="color:var(--mut);font-size:12.5px;margin-left:8px">调度器随 Gateway 运行；Gateway 停了定时任务就不会触发。</span>
+</div>
+
+<div class="card newtask">
+<div class="nt-head">
+  <div class="nt-icon">⏰</div>
+  <div>
+    <h3 style="margin:0">新建定时任务</h3>
+    <div style="color:var(--mut);font-size:12.5px">到点自动让 Agent 干活，结果可发微信</div>
+  </div>
+</div>
+<form method="post" action="/cron/create">
+
+  <div class="nt-step"><span class="nt-num">1</span>起个名字（选填）</div>
+  <input name="name" placeholder="如：晨报、服务器巡检、周报提醒" style="margin-bottom:18px">
+
+  <div class="nt-step"><span class="nt-num">2</span>什么时候执行？</div>
+  <div class="nt-modes">
+    <label class="nt-mode">
+      <input type="radio" name="smode" value="daily" checked>
+      <div class="nt-mode-body">
+        <div class="nt-mode-title">📅 每天</div>
+        <div class="nt-mode-sub">每天固定时间执行</div>
+        <div class="nt-mode-inp">
+          <input type="time" name="at_time" value="07:00">
+        </div>
+      </div>
+    </label>
+
+    <label class="nt-mode">
+      <input type="radio" name="smode" value="weekly">
+      <div class="nt-mode-body">
+        <div class="nt-mode-title">🗓️ 每周</div>
+        <div class="nt-mode-sub">勾选星期几（可多选）</div>
+        <div class="nt-mode-inp">
+          <span class="wdays">
+            <label class="wd"><input type="checkbox" name="weekdays" value="1">一</label>
+            <label class="wd"><input type="checkbox" name="weekdays" value="2">二</label>
+            <label class="wd"><input type="checkbox" name="weekdays" value="3">三</label>
+            <label class="wd"><input type="checkbox" name="weekdays" value="4">四</label>
+            <label class="wd"><input type="checkbox" name="weekdays" value="5">五</label>
+            <label class="wd"><input type="checkbox" name="weekdays" value="6">六</label>
+            <label class="wd"><input type="checkbox" name="weekdays" value="0">日</label>
+          </span>
+        </div>
+      </div>
+    </label>
+
+    <label class="nt-mode">
+      <input type="radio" name="smode" value="interval">
+      <div class="nt-mode-body">
+        <div class="nt-mode-title">🔁 间隔重复</div>
+        <div class="nt-mode-sub">每隔一段时间执行</div>
+        <div class="nt-mode-inp">
+          每 <input name="interval" value="2" style="width:56px;text-align:center;display:inline-block">
+          <select name="interval_unit" style="width:auto;display:inline-block">
+            <option value="h">小时</option><option value="m">分钟</option>
+          </select>
+        </div>
+      </div>
+    </label>
+
+    <label class="nt-mode">
+      <input type="radio" name="smode" value="once">
+      <div class="nt-mode-body">
+        <div class="nt-mode-title">🎯 执行一次</div>
+        <div class="nt-mode-sub">指定日期时间，跑完即止</div>
+        <div class="nt-mode-inp">
+          <input type="datetime-local" name="once_at">
+        </div>
+      </div>
+    </label>
+  </div>
+
+  <details class="nt-adv">
+    <summary>⚙️ 高级：自定义 cron 表达式</summary>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="radio" name="smode" value="custom" style="width:auto"></label>
+      <input name="schedule" placeholder="分 时 日 月 周，如 0 7 * * *" class="mono" style="flex:1;min-width:200px">
+      <label style="display:flex;align-items:center;gap:5px;margin:0;font-size:12.5px;color:var(--mut)"><input type="checkbox" name="once_flag" value="1" style="width:auto">只执行一次</label>
+    </div>
+  </details>
+
+  <div class="nt-step" style="margin-top:18px"><span class="nt-num">3</span>让 Agent 干什么？ *</div>
+  <textarea name="prompt" rows="3" required placeholder="写清楚要做的事，如：检查服务器状态，有异常就汇报，没异常不用发消息" style="margin-bottom:16px"></textarea>
+
+  <div class="nt-step"><span class="nt-num">4</span>结果发到哪？</div>
+  <div class="nt-deliver">
+    <label class="nt-dv"><input type="radio" name="deliver" value="" checked><span>💬 默认<br><i>发回创建来源</i></span></label>
+    <label class="nt-dv"><input type="radio" name="deliver" value="weixin"><span>📱 微信<br><i>发到微信</i></span></label>
+    <label class="nt-dv"><input type="radio" name="deliver" value="local"><span>🗄️ 只记录<br><i>存服务器不发消息</i></span></label>
+  </div>
+
+  <div style="margin-top:20px;display:flex;justify-content:flex-end">
+    <button class="btn" type="submit" style="padding:10px 34px;font-size:14.5px">＋ 创建任务</button>
+  </div>
+</form>
+</div>
+
+<div class="card" style="margin-top:14px">
+<h3>任务列表（{{jobs|length}}）</h3>
+{% if jobs %}
+<div style="overflow-x:auto">
+<table>
+<tr><th>名称</th><th>周期</th><th>送达</th><th>模型</th><th style="white-space:nowrap">下次运行</th><th style="white-space:nowrap">上次运行</th><th>状态</th><th style="width:250px">操作</th></tr>
+{% for j in jobs %}
+<tr>
+<td><b>{{j.name}}</b><div style="color:var(--mut);font-size:11.5px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{j.prompt}}">{{j.prompt[:60]}}</div></td>
+<td class="mono" style="font-size:12.5px">{{j.schedule}}</td>
+<td>{{j.deliver or 'origin'}}</td>
+<td class="mono" style="font-size:11.5px">{{j.model or '默认'}}</td>
+<td class="mono" style="font-size:12px">{{j.next_run or '—'}}</td>
+<td class="mono" style="font-size:12px">{{j.last_run or '—'}} {% if j.last_status %}<span class="tag {{ 'g' if j.last_status=='ok' else 'r' }}">{{j.last_status}}</span>{% endif %}</td>
+<td>{% if j.state=='paused' %}<span class="tag gray">已暂停</span>{% else %}<span class="tag g">活跃</span>{% endif %}</td>
+<td style="white-space:nowrap">
+  {% if j.state=='paused' %}
+  <form class="inline" method="post" action="/cron/action/{{j.id}}/resume"><button class="btn" style="padding:4px 10px;font-size:12.5px">恢复</button></form>
+  {% else %}
+  <form class="inline" method="post" action="/cron/action/{{j.id}}/pause"><button class="btn ghost" style="padding:4px 10px;font-size:12.5px">暂停</button></form>
+  {% endif %}
+  <form class="inline" method="post" action="/cron/action/{{j.id}}/run"><button class="btn ghost" style="padding:4px 10px;font-size:12.5px">立即跑</button></form>
+  <a class="btn ghost" href="javascript:showHist('{{j.id}}','{{ j.name|e }}')" style="padding:4px 10px;font-size:12.5px">历史</a>
+  <form class="inline" method="post" action="/cron/action/{{j.id}}/remove" onsubmit="return confirm('删除定时任务「'+ {{j.name|tojson}} +'」？不可恢复！')"><button class="btn danger" style="padding:4px 10px;font-size:12.5px">删除</button></form>
+</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+{% else %}
+<p style="color:var(--mut)">暂无定时任务</p>
+{% endif %}
+</div>
+<style>
+.nt-head{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.nt-icon{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#e8eefc,#dbe6fb);display:flex;align-items:center;justify-content:center;font-size:22px}
+.nt-step{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;margin-bottom:8px;color:var(--txt)}
+.nt-num{width:20px;height:20px;border-radius:50%;background:var(--pri);color:#fff;font-size:12px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.nt-modes{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.nt-mode{position:relative;cursor:pointer}
+.nt-mode input[type=radio]{position:absolute;opacity:0;pointer-events:none}
+.nt-mode-body{border:1.5px solid var(--line);border-radius:10px;padding:12px 14px;background:#fff;transition:border-color .15s,box-shadow .15s,background .15s;height:100%}
+.nt-mode:hover .nt-mode-body{border-color:#b9c6e8}
+.nt-mode input:checked+.nt-mode-body{border-color:var(--pri);background:#f5f8ff;box-shadow:0 0 0 3px rgba(29,78,216,.10)}
+.nt-mode-title{font-weight:600;font-size:13.5px;margin-bottom:2px}
+.nt-mode-sub{color:var(--mut);font-size:12px;margin-bottom:8px}
+.nt-mode-inp{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px}
+.nt-mode-inp input,.nt-mode-inp select{padding:5px 8px;font-size:13px;border-radius:7px}
+.nt-mode-inp input[type=time]{width:110px}
+.nt-adv{margin-bottom:6px;border:1px dashed var(--line);border-radius:8px;padding:8px 12px}
+.nt-adv summary{cursor:pointer;color:var(--mut);font-size:13px}
+.wdays{display:inline-flex;gap:4px;flex-wrap:wrap}
+.wd{display:inline-flex;align-items:center;padding:4px 10px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;cursor:pointer;background:#fff;user-select:none}
+.wd:hover{border-color:var(--pri)}
+.wd:has(input:checked){border-color:var(--pri);background:var(--pri);color:#fff;font-weight:600}
+.wd input{display:none}
+.nt-deliver{display:flex;gap:10px;flex-wrap:wrap}
+.nt-dv{position:relative;cursor:pointer;flex:1;min-width:130px}
+.nt-dv input{position:absolute;opacity:0;pointer-events:none}
+.nt-dv span{display:block;border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13.5px;background:#fff;transition:border-color .15s,background .15s;text-align:center}
+.nt-dv span i{font-style:normal;color:var(--mut);font-size:11.5px}
+.nt-dv:hover span{border-color:#b9c6e8}
+.nt-dv input:checked+span{border-color:var(--pri);background:#f5f8ff;box-shadow:0 0 0 3px rgba(29,78,216,.10);color:var(--pri);font-weight:600}
+@media(max-width:900px){.nt-modes{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.nt-modes{grid-template-columns:1fr}}
+</style>
+<script>
+document.querySelectorAll('.nt-mode').forEach(l=>{
+  l.addEventListener('click',()=>{l.querySelector('input[type=radio]').checked=true;});
+});
+</script>
+<div id="histmask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99">
+<div style="max-width:680px;margin:7vh auto;background:#fff;border-radius:12px;padding:18px 20px;max-height:78vh;overflow:auto">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+<h3 style="margin:0" id="histtitle">执行历史</h3>
+<button class="btn ghost" style="margin-left:auto;padding:4px 12px" onclick="document.getElementById('histmask').style.display='none'">✕ 关闭</button>
+</div>
+<p style="color:var(--mut);font-size:12px;margin:0 0 10px">注：仅记录从本页面手动点「立即跑」的执行；定时自动触发的走框架内部，此处看不到。</p>
+<div id="histbody" style="font-size:13px">加载中…</div>
+<div style="margin-top:12px;text-align:right"><button class="btn danger" style="padding:5px 14px" onclick="clearHist()">清空全部历史</button></div>
+</div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+async function showHist(jid, name){
+  document.getElementById('histtitle').textContent = '执行历史 · ' + (name||jid);
+  document.getElementById('histmask').style.display='block';
+  document.getElementById('histbody').innerHTML='加载中…';
+  try{
+    const r = await fetch('/cron/history?job_id='+encodeURIComponent(jid)+'&limit=20');
+    const j = await r.json();
+    if(!j.ok || !j.rows.length){ document.getElementById('histbody').innerHTML='<p style="color:var(--mut)">暂无执行记录——点「立即跑」后会在这里留痕。</p>'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse">';
+    html += '<tr style="color:var(--mut);font-size:12px;text-align:left"><th style="padding:4px">时间</th><th>结果</th><th>耗时</th><th>输出</th></tr>';
+    for(const row of j.rows){
+      const okc = row.ok ? '<span style="color:var(--ok);font-weight:600">成功</span>' : '<span style="color:var(--err);font-weight:600">失败</span>';
+      const del = row.deleted ? ' <span style="color:var(--mut);font-size:11px">(任务已删除)</span>' : '';
+      html += '<tr style="border-top:1px solid #eef1f5"><td style="padding:6px 4px;white-space:nowrap">'+esc(row.ts)+del+'</td><td>'+okc+'</td><td style="white-space:nowrap">'+(row.duration!=null?row.duration+'s':'—')+'</td><td style="color:var(--mut);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(row.output)+'">'+esc((row.output||'').slice(0,80))+'</td></tr>';
+    }
+    html += '</table>';
+    document.getElementById('histbody').innerHTML = html;
+  }catch(e){ document.getElementById('histbody').textContent='加载失败：'+e; }
+}
+async function clearHist(){
+  if(!confirm('清空全部任务的执行历史？不可恢复！')) return;
+  await fetch('/cron/history/clear',{method:'POST'});
+  document.getElementById('histmask').style.display='none';
+  location.reload();
+}
+</script>
+{% endblock %}

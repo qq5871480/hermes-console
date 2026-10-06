@@ -6,6 +6,8 @@
 <div style="width:200px;flex-shrink:0">
   <div class="card" style="padding:12px">
     <a class="btn" href="/chat" style="display:block;text-align:center;padding:7px;font-size:13.5px">＋ 新会话</a>
+    <input id="srch" placeholder="🔍 搜会话内容" style="width:100%;margin-top:8px;border:1px solid #d4dae2;border-radius:6px;padding:6px 8px;font-size:12.5px" oninput="doSearch()">
+    <div id="searchres" style="display:none;margin-top:6px;border:1px solid #eef1f5;border-radius:6px;max-height:260px;overflow-y:auto"></div>
     <div style="margin-top:10px;max-height:520px;overflow-y:auto">
     {% for c in chats %}
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
@@ -92,27 +94,65 @@ function send(){
   let shown=text;
   for(const f of files) shown+=(shown?'\n':'')+'📎 '+f.name;
   inp.value='';document.getElementById('attpreview').innerHTML='';
-  btn.disabled=true;btn.textContent='处理中…';
+  btn.disabled=true;btn.textContent='…';
   addMsg('user',shown);
-  const w=addMsg('waiting',files.length?'Agent 处理附件+思考中…（可能要几分钟）':'Agent 思考中…（复杂任务可能要几分钟）');
+  const w=addMsg('waiting',files.length?'Agent 处理附件+思考中…':'Agent 思考中…');
   const fd=new FormData();fd.append('text',text);
   for(const f of files) fd.append('files',f);
   document.getElementById('fileinp').value='';
   if(chatId)fd.append('chat_id',chatId);
   fetch('/chat/send',{method:'POST',body:fd}).then(r=>r.json()).then(j=>{
-    w.remove();
-    if(j.ok){
-      addMsg('assistant',j.reply);
-      if(!chatId){chatId=j.chat_id;setTimeout(()=>location.href='/chat?id='+chatId,600);}
-    }else{
-      addMsg('assistant','⚠️ '+j.error);
+    if(!j.ok){ w.remove(); addMsg('assistant','⚠️ '+j.error);
       if(!chatId&&j.chat_id){chatId=j.chat_id;}
+      btn.disabled=false;btn.textContent='发送';inp.focus(); return; }
+    if(!chatId){chatId=j.chat_id;}
+    if(!j.async){
+      // 同步兼容路径
+      w.remove(); addMsg('assistant',j.reply);
+      if(!chatId||true){setTimeout(()=>location.href='/chat?id='+chatId,600);}
+      btn.disabled=false;btn.textContent='发送';inp.focus(); return;
     }
-    btn.disabled=false;btn.textContent='发送';inp.focus();
+    // 异步轮询
+    const tid=j.task_id; let n=0;
+    const timer=setInterval(()=>{
+      n++;
+      w.textContent='Agent 思考中… 已用时 '+n*3+' 秒';
+      fetch('/chat/poll?task_id='+tid).then(r=>r.json()).then(p=>{
+        if(!p.ok){ clearInterval(timer); w.remove(); addMsg('assistant','⚠️ '+p.error); return; }
+        if(p.status==='done'){
+          clearInterval(timer); w.remove(); addMsg('assistant',p.reply);
+          btn.disabled=false;btn.textContent='发送';inp.focus();
+          setTimeout(()=>location.href='/chat?id='+chatId,600);
+        } else if(p.status==='error'){
+          clearInterval(timer); w.remove(); addMsg('assistant','⚠️ '+p.error);
+          btn.disabled=false;btn.textContent='发送';inp.focus();
+        }
+      }).catch(()=>{});
+    }, 3000);
   }).catch(e=>{
     w.remove();addMsg('assistant','⚠️ 请求失败：'+e);
     btn.disabled=false;btn.textContent='发送';
   });
+}
+let srchT=null;
+function doSearch(){
+  clearTimeout(srchT);
+  srchT=setTimeout(async ()=>{
+    const q=document.getElementById('srch').value.trim();
+    const box=document.getElementById('searchres');
+    if(!q){ box.style.display='none'; box.innerHTML=''; return; }
+    try{
+      const r=await fetch('/chat/search?q='+encodeURIComponent(q));
+      const j=await r.json();
+      if(!j.ok||!j.hits.length){ box.style.display='block'; box.innerHTML='<div style="padding:8px;color:#9aa6b8;font-size:12px">无匹配</div>'; return; }
+      box.style.display='block';
+      box.innerHTML=j.hits.map(h=>
+        '<a href="/chat?id='+h.chat_id+'" style="display:block;padding:6px 8px;border-bottom:1px solid #f2f4f7;text-decoration:none;color:inherit">'+
+        '<div style="font-size:12px;color:#1d4ed8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+h.title.replace(/</g,'&lt;')+'</div>'+
+        '<div style="font-size:11.5px;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(h.role==='user'?'我':'AI')+': '+h.snippet.replace(/</g,'&lt;')+'</div>'+
+        '<div style="font-size:10.5px;color:#9aa6b8">'+h.time+'</div></a>').join('');
+    }catch(e){}
+  },300);
 }
 </script>
 {% endblock %}

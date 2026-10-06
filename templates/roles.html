@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}模型分工{% endblock %}
+{% block body %}
+<h2>模型分工</h2>
+<p style="color:var(--mut);font-size:13px;margin-bottom:12px">给不同用途指定模型，下拉项来自已配置的模型（缺的先去「模型设置」配）。主对话模型改后需重启 Gateway（去「会话通道」页）；子agent改完即生效。</p>
+
+{% macro modelsel(act, title, desc, cur, cands) %}
+<div class="card" style="margin-bottom:14px">
+<h3>{{title}} <span style="color:var(--mut);font-size:12.5px;font-weight:400">{{desc}}</span></h3>
+<form method="post" action="/roles" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+<input type="hidden" name="act" value="{{act}}">
+<label style="flex:1;min-width:260px">模型<select name="model_sel">
+<option value="">（不变）</option>
+{% for cd in cands %}<option value="{{cd.prov}}::{{cd.model}}" {{ 'selected' if cd.model==cur }}>{{cd.label}}</option>{% endfor %}
+{% if cur and cur not in cands|map(attribute='model')|list %}<option value="::{{cur}}" selected>{{cur}}（当前值，不在已配置列表）</option>{% endif %}
+</select></label>
+<button class="btn" type="submit">保存</button>
+</form>
+</div>
+{% endmacro %}
+
+{{ modelsel('main', '① 主对话模型', '当前：' ~ cur_main_prov ~ ' / ' ~ cur_main ~ ' · 你直接聊的', cur_main, cands) }}
+{{ modelsel('delegation', '② 子agent执行模型', '当前：' ~ (cur_del_model or '跟随主模型') ~ ' · 派出去干大块活的', cur_del_model, cands) }}
+{{ modelsel('fast', '③ 快速小活模型', '当前：' ~ (cur_fast or '跟随主模型') ~ ' · 会话标题等零碎任务，选便宜快的', cur_fast, cands) }}
+
+{% endblock %}
