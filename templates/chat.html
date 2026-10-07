@@ -4,7 +4,7 @@
 <h2>会话</h2>
 <div style="display:flex;gap:14px;align-items:flex-start">
 <div style="width:200px;flex-shrink:0">
-  <div class="card" style="padding:12px">
+  <div class="card m-list" style="padding:12px">
     <a class="btn" href="/chat" style="display:block;text-align:center;padding:7px;font-size:13.5px">＋ 新会话</a>
     <input id="srch" placeholder="🔍 搜会话内容" style="width:100%;margin-top:8px;border:1px solid #d4dae2;border-radius:6px;padding:6px 8px;font-size:12.5px" oninput="doSearch()">
     <div id="searchres" style="display:none;margin-top:6px;border:1px solid #eef1f5;border-radius:6px;max-height:260px;overflow-y:auto"></div>
@@ -22,8 +22,9 @@
     </div>
   </div>
 </div>
-<div class="card" style="flex:1;display:flex;flex-direction:column;height:600px;padding:0;overflow:hidden">
-  <div id="msgs" style="flex:1;overflow-y:auto;padding:16px 18px">
+<div class="card m-chat" style="flex:1;display:flex;flex-direction:column;height:600px;padding:0;overflow:hidden">
+  <a class="m-back" href="/chat">‹ 会话列表</a>
+<div id="msgs" style="flex:1;overflow-y:auto;padding:16px 18px">
     {% if not chat %}
     <div style="color:var(--mut);text-align:center;margin-top:120px">
       <div style="font-size:15px;font-weight:600;color:var(--txt)">与你的 Hermes Agent 对话</div>
@@ -68,10 +69,27 @@
   .send-btn{padding:0 14px}
   .bubble{max-width:88%;font-size:14px}
   #input{font-size:15px}
+  /* ===== 手机改版：列表/对话分屏 ===== */
+  main > div[style*="display:flex"]{display:block !important}
+  .m-list{width:100% !important}
+  .m-chat{display:none !important;position:fixed;left:0;right:0;top:52px;bottom:0;height:auto !important;margin:0;border-radius:0;border:none;z-index:30}
+  .m-chat.m-on{display:flex !important}
+  body.m-chatting{overflow:hidden}
+  .m-back{display:none}
+  .m-chat.m-on .m-back{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px;font-weight:600;color:var(--txt);text-decoration:none;background:#fff}
 }
+@media(min-width:641px){.m-back{display:none !important}}
 </style>
 <script>
 let chatId = {{ chat.id if chat else 'null' }};
+
+// ===== 手机分屏：进入会话即全屏对话视图 =====
+(function(){
+  if (!window.matchMedia('(max-width:640px)').matches) return;
+  var cc = document.querySelector('.m-chat');
+  if (cc && chatId) { cc.classList.add('m-on'); document.body.classList.add('m-chatting'); }
+})();
+
 const msgs=document.getElementById('msgs'), inp=document.getElementById('input'), btn=document.getElementById('sendbtn');
 msgs.scrollTop=msgs.scrollHeight;
 inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
