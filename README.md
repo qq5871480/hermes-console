@@ -81,7 +81,7 @@ Open `http://server-ip:8787` → create your password → you're in.
 
 ## systemd deployment
 
-`install.sh` asks "设置开机自启?" at the end — answer Y (default) and it registers a **user-level systemd service** (`systemctl --user enable --now hermes-console`), auto-starting on boot and on crash (Restart=on-failure). It also enables linger when possible.
+`install.sh` asks "设置开机自启?" at the end — auto-enables by default (skip with NO_AUTOSTART=1) and it registers a **user-level systemd service** (`systemctl --user enable --now hermes-console`), auto-starting on boot and on crash (Restart=on-failure). It also enables linger when possible.
 
 For manual/system-wide setup, see [`hermes-console.service`](hermes-console.service). Recommended: restrict the firewall to trusted sources, or put it behind nginx/caddy with TLS.
 

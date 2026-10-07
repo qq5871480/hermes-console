@@ -68,10 +68,14 @@ export HERMES_HOME="$HERMES_DIR"
 export CONSOLE_BACKUP_DIR="${CONSOLE_BACKUP_DIR:-$HOME/hermes-console-backups}"
 export CONSOLE_GATEWAY_SERVICE="${CONSOLE_GATEWAY_SERVICE:-hermes-gateway}"
 
-# 5. 开机自启（交互选择，回车默认选是）
-echo "==> 是否设置开机自启（systemd 用户级服务）？[Y/n]"
-read -r AUTOSTART_REPLY
-if [ "${AUTOSTART_REPLY:-Y}" = "Y" ] || [ "$AUTOSTART_REPLY" = "y" ]; then
+# 5. 开机自启（默认自动开启；显式 AUTOSTART=n / NO_AUTOSTART=1 跳过）
+if [ "${AUTOSTART_REPLY:-${NO_AUTOSTART:-}}" = "n" ] || [ "${AUTOSTART_REPLY:-}" = "N" ] || [ "${NO_AUTOSTART:-0}" = "1" ]; then
+  echo "==> 按设置跳过开机自启，以前台方式启动（Ctrl+C 停止）…"
+  echo "    访问：http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '服务器IP'):$PORT"
+  echo
+  exec ./venv/bin/gunicorn -w 1 --threads 8 --timeout 700 -b "0.0.0.0:$PORT" app:app
+fi
+echo "==> 设置开机自启（systemd 用户级服务）…"
   mkdir -p "$HOME/.config/systemd/user"
   cat > "$HOME/.config/systemd/user/hermes-console.service" <<UNIT
 [Unit]
@@ -95,14 +99,8 @@ UNIT
   systemctl --user enable --now hermes-console.service
   # 保证用户服务在不登录时也常驻
   loginctl show-user "$USER" --property=Linger 2>/dev/null | grep -q "Linger=yes" || sudo -n loginctl enable-linger "$USER" 2>/dev/null || echo "  ⚠ 未开启linger：服务器重启后需登录一次才拉起服务（sudo loginctl enable-linger $USER 可开启）"
-  echo "  ✓ 开机自启已设置：systemctl --user status hermes-console"
-  echo "    访问：http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '服务器IP'):$PORT"
-else
-  echo "==> 跳过自启，以前台方式启动（Ctrl+C 停止）…"
-  echo "    访问：http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '服务器IP'):$PORT"
-  echo
-  exec ./venv/bin/gunicorn -w 1 --threads 8 --timeout 700 -b "0.0.0.0:$PORT" app:app
-fi
+echo "  ✓ 开机自启已设置：systemctl --user status hermes-console"
+echo "    访问：http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '服务器IP'):$PORT"
 echo "    首次打开网页即进入「创建管理员密码」页面——没有默认密码，谁先访问谁设置，"
 echo "    请立即在浏览器中完成设置（公网环境尤其要第一时间设置！）"
 echo
