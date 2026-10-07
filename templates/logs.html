@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Gateway 日志{% endblock %}
 {% block body %}
-<div style="display:flex;align-items:center;gap:12px;flex-wrap:nowrap;margin-bottom:14px">
+<div class="logbar" style="display:flex;align-items:center;gap:12px;flex-wrap:nowrap;margin-bottom:14px">
   <h2 style="margin:0;white-space:nowrap">📜 Gateway 日志</h2>
   <span class="tag">{{ unit }}</span>
-  <div style="margin-left:auto;display:flex;flex-direction:row;flex-wrap:nowrap;gap:8px;align-items:center;white-space:nowrap;padding-top:14px">
+  <div class="logbar2" style="margin-left:auto;display:flex;flex-direction:row;flex-wrap:nowrap;gap:8px;align-items:center;white-space:nowrap;padding-top:14px">
     <label for="logn" style="color:var(--mut);font-size:12.5px;white-space:nowrap">条数</label>
     <select id="logn" onchange="reload()" style="width:88px;border:1px solid #d4dae2;border-radius:7px;padding:5px 8px;font-size:13px;white-space:nowrap">
       <option value="200">200</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option>
@@ -26,10 +26,20 @@
 </div>
 
 <style>
-.logbox{background:#0f172a;color:#d7e0ef;border-radius:10px;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.7;max-height:68vh;overflow:auto;white-space:pre-wrap;word-break:break-all}
-.logbox .l{padding:1px 0}
+.logbox{min-width:0;max-width:100%;background:#0f172a;color:#d7e0ef;border-radius:10px;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.7;max-height:68vh;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.logbox .l{padding:1px 0;overflow-wrap:anywhere;white-space:pre-wrap}
 .logbox .e{color:#f87171}
 .logbox .w{color:#fbbf24}
+
+@media(max-width:640px){
+  .logbar,.logbar2{flex-wrap:wrap !important}
+  .logbar .dh-mini{flex:1 1 auto;white-space:normal}
+  .toolbar{flex-wrap:wrap;gap:8px}
+  .toolbar select,.toolbar input{width:100%;min-width:0}
+  .toolbar .btn{flex:1}
+  .logbox{padding:10px 11px;font-size:11px;max-height:60vh}
+  .modal .box,.dialog{width:94vw !important;max-width:94vw;padding:14px}
+}
 </style>
 
 <div id="aimask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99">

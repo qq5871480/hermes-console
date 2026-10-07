@@ -99,7 +99,7 @@ a{color:var(--pri)}
 
 /* ===== 窄屏：侧栏变顶栏 ===== */
 @media(max-width:860px){
-  .layout{flex-direction:column}
+  .layout{display:block}  /* flex在column下main会被宽表格min-content撑破——改块布局彻底锁宽 */
   aside{width:100%;height:auto;position:static;flex-direction:column;align-items:stretch}
   aside .logo{border-bottom:none;padding:10px 14px 4px;display:flex;align-items:center}
   aside .logo .foot-in{margin-left:auto;font-weight:400;font-size:12.5px;display:flex;gap:12px}
@@ -110,6 +110,28 @@ a{color:var(--pri)}
   aside nav a .ic{display:none}
   aside .foot{display:none}
   main{padding:18px 14px 40px}
+}
+/* ===== 手机端适配（全局兜底）===== */
+@media(max-width:640px){
+  main{padding:14px 10px 40px}
+  /* grid/flex子项默认min-width:auto会被内容撑破——全部钳到0 */
+  main .grid>*,main .cards>*,.card,.card>*{min-width:0}
+  /* 卡片内表格自成横向滚动区 */
+  .card{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{min-width:0}
+  h2{font-size:19px}
+  /* 表格：可横向滑动，不撑破页面 */
+  table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  table th,.card th{font-size:12.5px}
+  td,th{padding:7px 8px;font-size:13px}
+  /* 卡片与按钮排布更紧凑 */
+  .card{padding:12px}
+  .btn{padding:8px 12px;font-size:13.5px}
+  input,select,textarea{font-size:15px}  /* 15px防iOS聚焦自动放大 */
+  /* 长词/长路径/长输出强制可断行 */
+  td,.card,code,pre{overflow-wrap:anywhere}
+  pre,code{white-space:pre-wrap;word-break:break-all}
+  .card .row{flex-wrap:wrap}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>

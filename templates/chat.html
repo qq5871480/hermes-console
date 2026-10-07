@@ -64,7 +64,11 @@
 .send-btn{height:36px;padding:0 18px;flex-shrink:0;border:none;border-radius:8px;background:var(--pri);color:#fff;font-size:14px;font-weight:600;cursor:pointer}
 .send-btn:hover{filter:brightness(1.1)}
 .send-btn:disabled{background:#c3cad6;cursor:not-allowed}
-@media(max-width:640px){.send-btn{padding:0 14px}}
+@media(max-width:640px){
+  .send-btn{padding:0 14px}
+  .bubble{max-width:88%;font-size:14px}
+  #input{font-size:15px}
+}
 </style>
 <script>
 let chatId = {{ chat.id if chat else 'null' }};
