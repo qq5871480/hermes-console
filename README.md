@@ -6,6 +6,15 @@ A lightweight web console for managing [Hermes Agent](https://github.com/NousRes
 
 Four jobs, four pages: **Model settings · Chat channels · Skills · Backup & restore**.
 
+
+## Screenshots
+
+| Dashboard | Models |
+|---|---|
+| ![Dashboard](docs/shots/01-dashboard.png) | ![Models](docs/shots/02-models.png) |
+| **Skills** | **Cron jobs** |
+| ![Skills](docs/shots/03-skills.png) | ![Cron](docs/shots/04-cron.png) |
+
 ## Features
 
 - 🔐 Password login (PBKDF2 + salt, 5-attempt lockout for 5 min, forced password change on first login)
@@ -109,6 +118,14 @@ MIT — see [LICENSE](LICENSE).
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 的轻量级 Web 管理控制台，像云厂商控制台一样简单，但完全自托管。
 
 四件事，四个页面：**模型设置 · 会话通道 · 技能管理 · 备份还原**。
+
+## 截图预览
+
+| 仪表盘 | 模型设置 |
+|---|---|
+| ![仪表盘](docs/shots/01-dashboard.png) | ![模型设置](docs/shots/02-models.png) |
+| **技能管理** | **定时任务** |
+| ![技能管理](docs/shots/03-skills.png) | ![定时任务](docs/shots/04-cron.png) |
 
 特性亮点：
 - 模型设置内置**国内服务商全家桶**，且区分「订阅版 / 按量版」不同端点（均对官方文档核实、实测存活）：智谱 GLM、阿里千问、腾讯、火山方舟豆包、百度千帆、Kimi、MiniMax、DeepSeek、小米 MiMo、阶跃星辰等
